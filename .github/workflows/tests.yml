@@ -20,6 +20,6 @@ jobs:
     
     - name: Build & Test
       run: |
-        meson setup builddir -Dtests=true
+        meson setup builddir
         meson compile -C builddir
         meson test -C builddir --verbose
