@@ -7,23 +7,20 @@ project(
 )
 
 srcs = [
-  'src/main.cc'
-]
-tests = [
-  'tests/test_elf.cc'
+  'src/main.cc',
+  'src/mapped-file.cc',
 ]
 
-gtest_dep = dependency('gtest', main : true)
+if target_machine.system() == 'windows'
+  error('Windows is not supported')
+else
+  srcs += ['src/mapped-file-unix.cc']
+endif
 
 exe = executable(
   'weld',
-  'src/main.cc',
+  srcs,
   install : true,
 )
 
-test_exe = executable(
-  'tests',
-  tests,
-  dependencies : [gtest_dep]
-)
-test('gtest test', test_exe)
+subdir('tests')
