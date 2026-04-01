@@ -9,6 +9,9 @@ project(
 srcs = [
   'src/main.cc',
   'src/mapped-file.cc',
+  'src/input-file.cc',
+  'src/elf.cc',
+  'src/error.cc',
 ]
 
 if target_machine.system() == 'windows'

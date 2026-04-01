@@ -8,22 +8,27 @@
 namespace weld {
 bool MappedFile::map(const char* path) {
   int fd = ::open(path, O_RDONLY);
-  if (fd == -1)
-    return false;
 
-  struct stat st;
-  if (fstat(fd, &st) == -1)
-    return false;
-
-  if (st.st_size > 0) {
-    ptr_ = static_cast<u8*>(
-        mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0));
-    if (ptr_ == MAP_FAILED)
+  bool result = [fd, this]() {
+    struct stat st;
+    if (fd == -1)
       return false;
-  }
+    if (fstat(fd, &st) == -1)
+      return false;
+    if (st.st_size <= 0)
+      return false;
+
+    void* new_ptr =
+        mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (new_ptr == MAP_FAILED)
+      return false;
+    this->ptr_ = static_cast<u8*>(new_ptr);
+    this->size_ = st.st_size;
+    return true;
+  }();
 
   close(fd);
-  return true;
+  return result;
 }
 
 void MappedFile::unmap() {

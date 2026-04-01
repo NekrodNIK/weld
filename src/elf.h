@@ -3,10 +3,19 @@
 // as only the i386 and x86_64 architectures are supported.
 #pragma once
 #include "ints.h"
+#include "src/arch.h"
+#include <cassert>
+#include <optional>
+#include <span>
 #include <type_traits>
+#include <utility>
 
 namespace weld::elf {
 enum : u32 {
+  EI_MAG0 = 0,
+  EI_MAG1 = 1,
+  EI_MAG2 = 2,
+  EI_MAG3 = 3,
   EI_CLASS = 4,
   EI_DATA = 5,
   EI_VERSION = 6,
@@ -50,17 +59,6 @@ enum : u32 {
 
 enum : u32 { EV_CURRENT = 1 };
 
-struct i386 {
-  static constexpr bool is_64 = false;
-  static constexpr u32 e_machine = EM_386;
-  static constexpr unsigned char ei_class = ELFCLASS32;
-};
-struct x86_64 {
-  static constexpr bool is_64 = true;
-  static constexpr u32 e_machine = EM_X86_64;
-  static constexpr unsigned char ei_class = ELFCLASS64;
-};
-
 template <typename E>
 struct Ehdr;
 template <typename E>
@@ -77,18 +75,18 @@ template <typename E>
 struct Rela;
 
 template <typename E>
-using Word = std::conditional_t<E::is_64, u64, i32>;
+using word = std::conditional_t<E::is_64, u64, i32>;
 template <typename E>
-using Sword = std::conditional_t<E::is_64, i64, i32>;
+using sword = std::conditional_t<E::is_64, i64, i32>;
 template <typename E>
 struct Ehdr {
   unsigned char e_ident[EI_IDENT];
   u16 e_type;
   u16 e_machine;
   u32 e_version;
-  Word<E> e_entry;
-  Word<E> e_phoff;
-  Word<E> e_shoff;
+  word<E> e_entry;
+  word<E> e_phoff;
+  word<E> e_shoff;
   u32 e_flags;
   u16 e_ehsize;
   u16 e_phentsize;
@@ -101,18 +99,17 @@ template <typename E>
 struct Shdr {
   u32 sh_name;
   u32 sh_type;
-  Word<E> sh_flags;
-  Word<E> sh_addr;
-  Word<E> sh_offset;
-  Word<E> sh_size;
+  word<E> sh_flags;
+  word<E> sh_addr;
+  word<E> sh_offset;
+  word<E> sh_size;
   u32 sh_link;
   u32 sh_info;
-  Word<E> sh_addralign;
-  Word<E> sh_entsize;
+  word<E> sh_addralign;
+  word<E> sh_entsize;
 };
 template <typename E>
-  requires(!E::is_64)
-struct Phdr<E> {
+struct Phdr {
   u32 p_type;
   u32 p_offset;
   u32 p_vaddr;
@@ -135,8 +132,7 @@ struct Phdr<E> {
   u64 p_align;
 };
 template <typename E>
-  requires(!E::is_64)
-struct Sym<E> {
+struct Sym {
   u32 st_name;
   u32 st_value;
   u32 st_size;
@@ -156,19 +152,53 @@ struct Sym<E> {
 };
 template <typename E>
 struct Dyn {
-  Sword<E> d_tag;
-  Word<E> d_val;
+  sword<E> d_tag;
+  word<E> d_val;
 };
 template <typename E>
 struct Rel {
-  Word<E> r_offset;
-  Word<E> r_info;
+  word<E> r_offset;
+  word<E> r_info;
 };
 template <typename E>
 struct Rela {
-  Word<E> r_offset;
-  Word<E> r_info;
-  Sword<E> r_addend;
+  word<E> r_offset;
+  word<E> r_info;
+  sword<E> r_addend;
 };
 
+bool is_elf(std::span<u8> mem);
+arch::Enum get_arch(std::span<u8> mem);
+
+template <typename E>
+std::optional<std::span<Shdr<E>>> get_shdr_table(std::span<u8> mem) {
+  elf::Ehdr<E>* ehdr = reinterpret_cast<elf::Ehdr<E>*>(mem.data());
+  if (mem.size() < ehdr->e_shoff + ehdr->e_shnum * sizeof(Shdr<E>)) {
+    return {};
+  }
+  return std::span(reinterpret_cast<Shdr<E>*>(mem.data() + ehdr->e_shoff),
+                   ehdr->e_shnum);
+}
+
+template <typename E>
+Shdr<E>* find_shdr(std::span<elf::Shdr<E>> shdr_tab, u32 type) {
+  for (Shdr<E>& shdr : shdr_tab)
+    if (shdr.sh_type == type)
+      return &shdr;
+  return nullptr;
+}
+
+template <typename E>
+std::optional<std::pair<std::span<Sym<E>>, std::span<Sym<E>>>>
+get_symbols_symtab_or_dynsym(u8* mem, elf::Shdr<E>& shdr) {
+  if (shdr.sh_entsize != sizeof(elf::Sym<E>)) {
+    return {};
+  }
+
+  auto symbols = std::span(reinterpret_cast<elf::Sym<E>*>(mem + shdr.sh_offset),
+                           shdr.sh_size / shdr.sh_entsize);
+  auto result = std::pair(symbols.subspan(0, shdr.sh_info - 1),
+                          symbols.subspan(shdr.sh_info));
+  return result;
+}
 } // namespace weld::elf
