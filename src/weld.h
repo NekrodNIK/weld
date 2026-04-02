@@ -3,6 +3,7 @@
 #include "src/elf.h"
 #include <cassert>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <memory>
 #include <optional>
