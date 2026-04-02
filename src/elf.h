@@ -176,6 +176,9 @@ std::optional<std::span<Shdr<E>>> get_shdr_table(std::span<u8> mem) {
   if (mem.size() < ehdr->e_shoff + ehdr->e_shnum * sizeof(Shdr<E>)) {
     return {};
   }
+  
+  // FIXME: It's probably best to check the alignment of the addresses in the file
+  // before converting types (you never know what address was written to the file).
   return std::span(reinterpret_cast<Shdr<E>*>(mem.data() + ehdr->e_shoff),
                    ehdr->e_shnum);
 }
