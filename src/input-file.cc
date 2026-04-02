@@ -45,6 +45,7 @@ std::unique_ptr<InputFile> InputFile::parse(MappedFile&& mapped) {
   case arch::Enum::x86_64:
     return create.operator()<arch::x86_64>();
   case arch::Enum::unsupported:
+  default:
     Fatal() << std::format("[{}] unsupported architecture", mapped.filename());
   }
 }
