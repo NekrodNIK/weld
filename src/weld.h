@@ -1,6 +1,6 @@
 #pragma once
 #include "ints.h"
-#include "src/elf.h"
+#include "elf.h"
 #include <cassert>
 #include <filesystem>
 #include <format>
@@ -17,8 +17,10 @@ class MappedFile {
   u8* ptr_;
   size_t size_;
   std::string filename_;
+  bool owns_memory_;
 
-  MappedFile() : ptr_(nullptr), size_(0) {};
+  MappedFile() : ptr_(nullptr), size_(0), owns_memory_(false) {};
+  MappedFile(u8* data, size_t size, std::string filename, bool owns_memory);
   bool map(const char* path);
   void unmap();
 
@@ -29,6 +31,7 @@ public:
   MappedFile& operator=(MappedFile&& src);
   ~MappedFile();
   static std::optional<MappedFile> open(const std::filesystem::path& path);
+  MappedFile slice(size_t offset, size_t size) const;
 
   std::string_view filename() const;
   std::span<const u8> data() const;
