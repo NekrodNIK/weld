@@ -3,11 +3,7 @@
 #include "src/elf.h"
 #include <cassert>
 #include <filesystem>
-#include <format>
-#include <functional>
 #include <iostream>
-#include <memory>
-#include <optional>
 #include <ostream>
 #include <span>
 #include <string>
@@ -15,6 +11,36 @@
 #include <unordered_map>
 
 namespace weld {
+class MappedFile {
+  u8* ptr_;
+  size_t size_;
+  bool owns_;
+  std::string filename_;
+
+  bool map_(const char* path);
+  void unmap_();
+  MappedFile() : ptr_(nullptr), size_(0), owns_(false) {};
+
+public:
+  static MappedFile open(const std::filesystem::path& path);
+  MappedFile slice(size_t offset, size_t size) const;
+
+  MappedFile(const MappedFile&) = delete;
+  MappedFile& operator=(const MappedFile&) = delete;
+  MappedFile(MappedFile&& src);
+  MappedFile& operator=(MappedFile&& src);
+  ~MappedFile();
+
+  std::string_view filename() const;
+  std::span<const u8> data() const;
+  const u8* raw() const;
+  size_t size() const;
+  std::span<u8> data();
+  u8* raw();
+
+  friend std::ostream& operator<<(std::ostream& out, const MappedFile& mapped);
+};
+
 template <typename E>
 struct Symbol {
   const elf::Sym<E>* esym;
@@ -23,7 +49,7 @@ struct Symbol {
 
 template <typename E>
 struct Context {
-  // NOTE: This is for heterogeneous lookup
+  // NOTE: This for heterogeneous lookup
   // https://en.cppreference.com/w/cpp/utility/functional.html#Transparent_function_objects
   struct string_hash {
     using is_transparent = void;
@@ -37,65 +63,36 @@ struct Context {
       return std::hash<std::string>{}(txt);
     }
   };
-  // NOTE: I guess it needs to be protected with a lock or use a lock-free data
-  // structure
-  std::unordered_map<std::string_view, Symbol<E>, string_hash,
-                            std::equal_to<>>
+  // NOTE: I guess it needs to be protected with a lock
+  // or use a lock-free data structure
+  std::unordered_map<std::string_view, Symbol<E>, string_hash, std::equal_to<>>
       symbol_map;
 };
 
-class MappedFile {
-  u8* ptr_;
-  size_t size_;
-  std::string filename_;
-
-  bool owns_memory_;
-
-  MappedFile() : ptr_(nullptr), size_(0), owns_memory_(false) {};
-  MappedFile(u8* data, size_t size, std::string filename, bool owns_memory);
-  bool map(const char* path);
-  void unmap();
-
-public:
-  MappedFile(const MappedFile&) = delete;
-  MappedFile& operator=(const MappedFile&) = delete;
-  MappedFile(MappedFile&& src);
-  MappedFile& operator=(MappedFile&& src);
-  ~MappedFile();
-  static std::optional<MappedFile> open(const std::filesystem::path& path);
-  MappedFile slice(size_t offset, size_t size) const;
-
-  std::string_view filename() const;
-  std::span<const u8> data() const;
-  const u8* raw() const;
-  size_t size() const;
-
-  std::span<u8> data();
-  u8* raw();
-};
-
+template <typename E>
 class InputFile {
 protected:
   MappedFile mapped_;
   InputFile(MappedFile&& mapped);
 
 public:
+  virtual ~InputFile() = default;
   static std::unique_ptr<InputFile> parse(MappedFile&& mapped);
   std::string_view filename() const { return mapped_.filename(); }
+  friend std::ostream& operator<<(std::ostream& out, const InputFile& file);
 };
 
 template <typename E>
-class ObjectFile : public InputFile {
+class ObjectFile : public InputFile<E> {
   std::span<elf::Sym<E>> elf_local_symbols_;
   std::span<elf::Sym<E>> elf_global_symbols_;
-  char* strtab;
 
 public:
   ObjectFile(MappedFile&& mapped);
 };
 
 template <typename E>
-class SharedObjectFile : public InputFile {
+class SharedObjectFile : public InputFile<E> {
   std::span<elf::Sym<E>> elf_local_symbols_;
   std::span<elf::Sym<E>> elf_global_symbols_;
 
@@ -103,6 +100,7 @@ public:
   SharedObjectFile(MappedFile&& mapped);
 };
 
+// TODO: std::print support
 class Fatal {
   std::ostream& out;
 
@@ -139,5 +137,4 @@ public:
     return *this;
   };
 };
-
 } // namespace weld

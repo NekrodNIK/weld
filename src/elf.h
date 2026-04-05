@@ -181,8 +181,8 @@ struct Rela {
   sword<E> r_addend;
 };
 
-bool is_elf(std::span<u8> mem);
-arch::Enum get_arch(std::span<u8> mem);
+bool is_elf(std::span<const u8> mem);
+arch::Enum get_arch(std::span<const u8> mem);
 
 template <typename E>
 std::optional<std::span<Shdr<E>>> get_shdr_table(std::span<u8> mem) {

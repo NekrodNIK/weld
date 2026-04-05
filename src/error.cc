@@ -9,7 +9,7 @@ constexpr auto warning_message = "weld: \x1b[0;31mwarning\x1b[0m ";
 
 namespace weld {
 Fatal::Fatal() : out(std::cerr) { out << fatal_message; }
-Fatal::~Fatal() { abort(); }
+Fatal::~Fatal() { exit(1); }
 Error::Error() : out(std::cerr) { out << error_message; }
 Warn::Warn() : out(std::cerr) { out << warning_message; };
 } // namespace weld

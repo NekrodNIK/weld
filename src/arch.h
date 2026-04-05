@@ -1,5 +1,7 @@
 #pragma once
 #include "ints.h"
+#include <ostream>
+#include <type_traits>
 
 namespace weld::arch {
 struct i386 {
@@ -18,4 +20,15 @@ enum class Enum : i32 {
   i386,
   x86_64,
 };
+
+template <typename E>
+Enum get_enum() {
+  if constexpr (std::is_same<E, i386>()) {
+    return Enum::i386;
+  } else if constexpr (std::is_same<E, x86_64>()) {
+    return Enum::x86_64;
+  }
+}
+
+std::ostream& operator<<(std::ostream& out, Enum arch);
 } // namespace weld::arch

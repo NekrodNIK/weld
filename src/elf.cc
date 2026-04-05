@@ -1,7 +1,7 @@
 #include "elf.h"
 
 namespace weld::elf {
-bool is_elf(std::span<u8> mem) {
+bool is_elf(std::span<const u8> mem) {
   if (mem.size() < 4) {
     return false;
   }
@@ -9,12 +9,12 @@ bool is_elf(std::span<u8> mem) {
          (mem[EI_MAG2] == 'L') && (mem[EI_MAG3] == 'F');
 }
 
-arch::Enum get_arch(std::span<u8> mem) {
-  if (mem.size() < EI_IDENT + 2) {
+arch::Enum get_arch(std::span<const u8> mem) {
+  if (mem.size() < EI_IDENT + 4) {
     return arch::Enum::unsupported;
   }
 
-  u16 e_machine = *reinterpret_cast<u16*>(mem.data() + EI_IDENT + 2);
+  u16 e_machine = *(u16*)(mem.data() + EI_IDENT + 2);
   switch (e_machine) {
   case EM_386:
     return arch::Enum::i386;
