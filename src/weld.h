@@ -2,6 +2,7 @@
 #include "ints.h"
 #include "src/elf.h"
 #include <cassert>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <ostream>
@@ -42,9 +43,26 @@ public:
   friend std::ostream& operator<<(std::ostream& out, const MappedFile& mapped);
 };
 
+template<typename E>
+struct Relocation {
+  elf::Rela<E>* elf_rela;
+  std::string symbol_name;
+};
+
+// FIXME: split into two stages, merge and output
+template <typename E>
+struct MergedSection {
+  std::string name;
+  size_t addr = 0;
+  size_t alignment = 0;
+  std::vector<u8> data;
+  std::vector<Relocation<E>> relocations; // FIXME
+};
+
 template <typename E>
 struct Symbol {
-  const elf::Sym<E>* esym;
+  elf::Sym<E>* esym;
+  MergedSection<E>* section;
   std::string_view name;
 };
 
@@ -52,13 +70,9 @@ template <typename E>
 struct InputSection {
   std::span<u8> data;
   elf::Shdr<E>* elf_hdr;
+  std::vector<Relocation<E>> relocations; // FIXME
 };
 
-template <typename E>
-struct MergedSection {
-  std::string name;
-  std::vector<u8> data;
-};
 
 template <typename E>
 struct Context {
@@ -97,13 +111,13 @@ public:
 
   virtual void resolve_symbols(Context<E>& ctx) = 0;
   virtual void merge_sections(Context<E>& ctx) = 0;
-  virtual void resolve_relocations(Context<E>& ctx) = 0;
 };
 
 template <typename E>
 class ObjectFile : public InputFile<E> {
   std::span<elf::Sym<E>> elf_local_symbols_;
   std::span<elf::Sym<E>> elf_global_symbols_;
+  std::span<elf::Shdr<E>> elf_shdr_tab_;
   std::string_view elf_strtab_;
   std::string_view elf_shstrtab_;
   std::vector<InputSection<E>> input_sections_;
@@ -129,6 +143,7 @@ template <typename E>
 class OutputFile {
 public:
   void resolve_relocations(Context<E>& ctx);
+  void write(Context<E>& ctx, const std::filesystem::path& file);
 };
 
 // TODO: std::print support

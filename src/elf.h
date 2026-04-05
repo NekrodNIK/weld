@@ -73,6 +73,17 @@ enum : u32 {
   EV_CURRENT = 1,
 };
 
+enum : u32 {
+  PT_NONE = 0,
+  PT_LOAD = 1,
+};
+
+enum : u32 {
+  PF_X = 0x1,
+  PF_W = 0x2,
+  PF_R = 0x4,
+};
+
 template <typename E>
 struct Ehdr;
 template <typename E>

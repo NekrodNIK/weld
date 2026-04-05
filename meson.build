@@ -14,6 +14,7 @@ srcs = [
   'src/error.cc',
   'src/cli_parser.cc',
   'src/arch.cc',
+  'src/output-file.cc',
 ]
 
 if target_machine.system() == 'windows'

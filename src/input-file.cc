@@ -6,6 +6,7 @@
 #include <cstring>
 #include <memory>
 #include <print>
+#include <ranges>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -48,33 +49,46 @@ template <typename E>
 ObjectFile<E>::ObjectFile(MappedFile&& mapped)
     : InputFile<E>(std::move(mapped)) {
   auto ehdr = reinterpret_cast<elf::Ehdr<E>*>(this->mapped_.raw());
-  std::span<elf::Shdr<E>> shdr_tab;
 
   if (auto result = elf::get_shdr_table<E>(this->mapped_.data())) {
-    shdr_tab = result.value();
+    elf_shdr_tab_ = result.value();
   } else {
     Fatal() << this->mapped_ << " invalid elf";
   }
 
-  auto symtab_hdr = elf::find_shdr<E>(shdr_tab, elf::SHT_SYMTAB);
-  auto strtab_hdr = &shdr_tab[symtab_hdr->sh_link];
-  auto shstrtab_hdr = &shdr_tab[ehdr->e_shstrndx];
+  auto symtab_hdr = elf::find_shdr<E>(elf_shdr_tab_, elf::SHT_SYMTAB);
+  auto strtab_hdr = &elf_shdr_tab_[symtab_hdr->sh_link];
+  auto shstrtab_hdr = &elf_shdr_tab_[ehdr->e_shstrndx];
   elf_strtab_ = std::string_view(
       reinterpret_cast<char*>(this->mapped_.raw() + strtab_hdr->sh_offset),
       strtab_hdr->sh_size);
   elf_shstrtab_ = std::string_view(
       reinterpret_cast<char*>(this->mapped_.raw() + shstrtab_hdr->sh_offset),
       shstrtab_hdr->sh_size);
-  input_sections_ = std::vector<InputSection<E>>(shdr_tab.size());
+  input_sections_ = std::vector<InputSection<E>>(elf_shdr_tab_.size());
 
-  std::transform(
-      shdr_tab.begin(), shdr_tab.end(), input_sections_.begin(),
-      [this](elf::Shdr<E>& elf_hdr) -> InputSection<E> {
-        return {.data = std::span(reinterpret_cast<u8*>(this->mapped_.raw() +
-                                                        elf_hdr.sh_offset),
-                                  elf_hdr.sh_size),
-                .elf_hdr = &elf_hdr};
-      });
+  for (auto [i, shdr] : std::views::enumerate(elf_shdr_tab_)) {
+    input_sections_[i].data =
+        std::span(reinterpret_cast<u8*>(this->mapped_.raw() + shdr.sh_offset),
+                  shdr.sh_size);
+    input_sections_[i].elf_hdr = &shdr;
+
+    if (shdr.sh_type == elf::SHT_RELA) {
+      auto relas = std::span(
+          reinterpret_cast<elf::Rela<E>*>(this->mapped_.raw() + shdr.sh_offset),
+          shdr.sh_size / sizeof(elf::Rela<E>));
+      for (elf::Rela<E> rela : relas) {
+        auto symbol_name =
+            elf_strtab_
+                .substr(reinterpret_cast<elf::Sym<E>*>(
+                            this->mapped_.raw() + symtab_hdr->sh_offset)[rela.r_info >> 32]
+                            .st_name)
+                .data(); // FIXME
+        input_sections_[shdr.sh_info].relocations.push_back(
+            Relocation<E>{.elf_rela = &rela, .symbol_name = symbol_name});
+      }
+    }
+  }
 
   if (symtab_hdr) {
     if (auto result = elf::get_symbols_symtab_or_dynsym<E>(this->mapped_.raw(),
@@ -115,9 +129,20 @@ SharedObjectFile<E>::SharedObjectFile(MappedFile&& mapped)
 
 template <typename E>
 void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
-  for (const elf::Sym<E>& elf_sym : elf_global_symbols_) {
+  for (elf::Sym<E>& elf_sym : elf_global_symbols_) {
     auto name = elf_strtab_.substr(elf_sym.st_name).data();
-    auto sym = Symbol<E>{.esym = &elf_sym, .name = name};
+
+    // FIXME
+    
+    auto section_name = "";
+    if (elf_sym.st_shndx != elf::SHN_UNDEF) {
+      section_name = elf_shstrtab_.substr(elf_shdr_tab_[elf_sym.st_shndx].sh_name).data();
+    }
+    auto section =
+        &(ctx.merged_sections[section_name] = {.name = section_name});
+    //
+
+    auto sym = Symbol<E>{.esym = &elf_sym, .section = section, .name = name};
 
     if (elf_sym.st_shndx == elf::SHN_UNDEF) {
       if (!ctx.symbol_map.contains(name)) {
@@ -130,8 +155,7 @@ void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
     if (ctx.symbol_map.contains(name)) {
       in_map = &ctx.symbol_map[name];
     } else {
-      in_map =
-          &(ctx.symbol_map[name] = Symbol<E>{.esym = &elf_sym, .name = name});
+      in_map = &(ctx.symbol_map[name] = sym);
     }
 
     if (sym.esym->st_shndx == elf::SHN_COMMON &&
@@ -155,16 +179,31 @@ void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
 template <typename E>
 void ObjectFile<E>::merge_sections(Context<E>& ctx) {
   for (InputSection<E>& input_section : input_sections_) {
+    if (input_section.elf_hdr->sh_type == elf::SHT_NOBITS || input_section.elf_hdr->sh_type == elf::SHT_PROGBITS) {
+      continue;        
+    }
+    
     auto name = elf_shstrtab_.substr(input_section.elf_hdr->sh_name).data();
     if (!ctx.merged_sections.contains(name)) {
       ctx.merged_sections[name] = MergedSection<E>{
           .name = name,
+          .addr = 0,
+          .alignment = static_cast<size_t>(input_section.elf_hdr->sh_addralign),
           .data = std::vector<u8>(),
+          .relocations = std::vector<Relocation<E>>(),
       };
+    } else {
+      auto alignment = input_section.elf_hdr->sh_addralign;
+      if (alignment > ctx.merged_sections[name].alignment) {
+        ctx.merged_sections[name].alignment = alignment;
+      }
     }
     ctx.merged_sections[name].data.insert(ctx.merged_sections[name].data.end(),
                                           input_section.data.begin(),
                                           input_section.data.end());
+    ctx.merged_sections[name].relocations.insert(
+        ctx.merged_sections[name].relocations.end(),
+        input_section.relocations.begin(), input_section.relocations.end());
   }
 }
 

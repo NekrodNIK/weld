@@ -43,12 +43,16 @@ process_input(std::vector<MappedFile>& mapped_files) {
 template <typename E>
 void main(std::vector<MappedFile>&& mapped_files, LinkerFlags& flags) {
   auto input_files = process_input<E>(mapped_files);
+  auto output_file = weld::OutputFile<E>();
   Context<E> ctx;
 
   for (auto& file : input_files) {
     file->resolve_symbols(ctx);
     file->merge_sections(ctx);
   }
+
+  output_file.resolve_relocations(ctx);
+  output_file.write(ctx, flags.output_file);
 }
 
 } // namespace weld
