@@ -49,7 +49,10 @@ class MappedFile {
   size_t size_;
   std::string filename_;
 
-  MappedFile() : ptr_(nullptr), size_(0) {};
+  bool owns_memory_;
+
+  MappedFile() : ptr_(nullptr), size_(0), owns_memory_(false) {};
+  MappedFile(u8* data, size_t size, std::string filename, bool owns_memory);
   bool map(const char* path);
   void unmap();
 
@@ -60,6 +63,7 @@ public:
   MappedFile& operator=(MappedFile&& src);
   ~MappedFile();
   static std::optional<MappedFile> open(const std::filesystem::path& path);
+  MappedFile slice(size_t offset, size_t size) const;
 
   std::string_view filename() const;
   std::span<const u8> data() const;
@@ -70,7 +74,6 @@ public:
   u8* raw();
 };
 
-template<typename E>
 class InputFile {
 protected:
   MappedFile mapped_;
@@ -79,12 +82,10 @@ protected:
 public:
   static std::unique_ptr<InputFile> parse(MappedFile&& mapped);
   std::string_view filename() const { return mapped_.filename(); }
-
-  void sy
 };
 
 template <typename E>
-class ObjectFile : public InputFile<E> {
+class ObjectFile : public InputFile {
   std::span<elf::Sym<E>> elf_local_symbols_;
   std::span<elf::Sym<E>> elf_global_symbols_;
   char* strtab;
@@ -94,7 +95,7 @@ public:
 };
 
 template <typename E>
-class SharedObjectFile : public InputFile<E> {
+class SharedObjectFile : public InputFile {
   std::span<elf::Sym<E>> elf_local_symbols_;
   std::span<elf::Sym<E>> elf_global_symbols_;
 

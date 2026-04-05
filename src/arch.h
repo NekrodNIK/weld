@@ -1,5 +1,5 @@
 #pragma once
-#include "src/ints.h"
+#include "ints.h"
 
 namespace weld::arch {
 struct i386 {

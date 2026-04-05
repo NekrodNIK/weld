@@ -1,5 +1,4 @@
 #include "elf.h"
-#include "src/arch.h"
 
 namespace weld::elf {
 bool is_elf(std::span<u8> mem) {

@@ -3,11 +3,10 @@
 // as only the i386 and x86_64 architectures are supported.
 #pragma once
 #include "ints.h"
-#include "src/arch.h"
+#include "arch.h"
 #include <cassert>
 #include <optional>
 #include <span>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -191,10 +190,8 @@ std::optional<std::span<Shdr<E>>> get_shdr_table(std::span<u8> mem) {
   if (mem.size() < ehdr->e_shoff + ehdr->e_shnum * sizeof(Shdr<E>)) {
     return {};
   }
-
-  // FIXME: It's probably best to check the alignment of the addresses in the
-  // file before converting types (you never know what address was written to
-  // the file).
+  // FIXME: It's probably best to check the alignment of the addresses in the file
+  // before converting types (you never know what address was written to the file).
   return std::span(reinterpret_cast<Shdr<E>*>(mem.data() + ehdr->e_shoff),
                    ehdr->e_shnum);
 }
@@ -216,7 +213,7 @@ get_symbols_symtab_or_dynsym(u8* mem, elf::Shdr<E>& shdr) {
 
   auto symbols = std::span(reinterpret_cast<elf::Sym<E>*>(mem + shdr.sh_offset),
                            shdr.sh_size / shdr.sh_entsize);
-  auto result = std::pair(symbols.subspan(0, shdr.sh_info),
+  auto result = std::pair(symbols.subspan(0, shdr.sh_info - 1),
                           symbols.subspan(shdr.sh_info));
   return result;
 }
