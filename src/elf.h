@@ -217,4 +217,5 @@ get_symbols_symtab_or_dynsym(u8* mem, elf::Shdr<E>& shdr) {
                           symbols.subspan(shdr.sh_info));
   return result;
 }
+
 } // namespace weld::elf

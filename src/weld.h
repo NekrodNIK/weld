@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace weld {
 class MappedFile {
@@ -48,6 +49,18 @@ struct Symbol {
 };
 
 template <typename E>
+struct InputSection {
+  std::span<u8> data;
+  elf::Shdr<E>* elf_hdr;
+};
+
+template <typename E>
+struct MergedSection {
+  std::string name;
+  std::vector<u8> data;
+};
+
+template <typename E>
 struct Context {
   // NOTE: This for heterogeneous lookup
   // https://en.cppreference.com/w/cpp/utility/functional.html#Transparent_function_objects
@@ -65,8 +78,9 @@ struct Context {
   };
   // NOTE: I guess it needs to be protected with a lock
   // or use a lock-free data structure
-  std::unordered_map<std::string_view, Symbol<E>, string_hash, std::equal_to<>>
-      symbol_map;
+  std::unordered_map<std::string, Symbol<E>, string_hash> symbol_map;
+  std::unordered_map<std::string, MergedSection<E>, string_hash>
+      merged_sections; // FIXME: split into two stages, merge and output
 };
 
 template <typename E>
@@ -80,15 +94,24 @@ public:
   static std::unique_ptr<InputFile> parse(MappedFile&& mapped);
   std::string_view filename() const { return mapped_.filename(); }
   friend std::ostream& operator<<(std::ostream& out, const InputFile& file);
+
+  virtual void resolve_symbols(Context<E>& ctx) = 0;
+  virtual void merge_sections(Context<E>& ctx) = 0;
+  virtual void resolve_relocations(Context<E>& ctx) = 0;
 };
 
 template <typename E>
 class ObjectFile : public InputFile<E> {
   std::span<elf::Sym<E>> elf_local_symbols_;
   std::span<elf::Sym<E>> elf_global_symbols_;
+  std::string_view elf_strtab_;
+  std::string_view elf_shstrtab_;
+  std::vector<InputSection<E>> input_sections_;
 
 public:
   ObjectFile(MappedFile&& mapped);
+  void resolve_symbols(Context<E>& ctx) override;
+  void merge_sections(Context<E>& ctx) override;
 };
 
 template <typename E>
@@ -98,6 +121,14 @@ class SharedObjectFile : public InputFile<E> {
 
 public:
   SharedObjectFile(MappedFile&& mapped);
+  void resolve_symbols(Context<E>& ctx) override;
+  void merge_sections(Context<E>& ctx) override;
+};
+
+template <typename E>
+class OutputFile {
+public:
+  void resolve_relocations(Context<E>& ctx);
 };
 
 // TODO: std::print support

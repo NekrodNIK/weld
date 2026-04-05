@@ -4,6 +4,7 @@
 #include "src/arch.h"
 #include "weld.h"
 #include <cassert>
+#include <memory>
 #include <vector>
 
 namespace weld {
@@ -42,6 +43,12 @@ process_input(std::vector<MappedFile>& mapped_files) {
 template <typename E>
 void main(std::vector<MappedFile>&& mapped_files, LinkerFlags& flags) {
   auto input_files = process_input<E>(mapped_files);
+  Context<E> ctx;
+
+  for (auto& file : input_files) {
+    file->resolve_symbols(ctx);
+    file->merge_sections(ctx);
+  }
 }
 
 } // namespace weld
