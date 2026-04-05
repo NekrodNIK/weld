@@ -4,14 +4,45 @@
 #include <cassert>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <ostream>
 #include <span>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace weld {
+template <typename E>
+struct Symbol {
+  const elf::Sym<E>* esym;
+  std::string_view name;
+};
+
+template <typename E>
+struct Context {
+  // NOTE: This is for heterogeneous lookup
+  // https://en.cppreference.com/w/cpp/utility/functional.html#Transparent_function_objects
+  struct string_hash {
+    using is_transparent = void;
+    size_t operator()(const char* txt) const {
+      return std::hash<std::string_view>{}(txt);
+    }
+    size_t operator()(std::string_view txt) const {
+      return std::hash<std::string_view>{}(txt);
+    }
+    size_t operator()(const std::string& txt) const {
+      return std::hash<std::string>{}(txt);
+    }
+  };
+  // NOTE: I guess it needs to be protected with a lock or use a lock-free data
+  // structure
+  std::unordered_map<std::string_view, Symbol<E>, string_hash,
+                            std::equal_to<>>
+      symbol_map;
+};
 
 class MappedFile {
   u8* ptr_;
@@ -39,6 +70,7 @@ public:
   u8* raw();
 };
 
+template<typename E>
 class InputFile {
 protected:
   MappedFile mapped_;
@@ -47,19 +79,22 @@ protected:
 public:
   static std::unique_ptr<InputFile> parse(MappedFile&& mapped);
   std::string_view filename() const { return mapped_.filename(); }
+
+  void sy
 };
 
 template <typename E>
-class ObjectFile : public InputFile {
+class ObjectFile : public InputFile<E> {
   std::span<elf::Sym<E>> elf_local_symbols_;
   std::span<elf::Sym<E>> elf_global_symbols_;
+  char* strtab;
 
 public:
   ObjectFile(MappedFile&& mapped);
 };
 
 template <typename E>
-class SharedObjectFile : public InputFile {
+class SharedObjectFile : public InputFile<E> {
   std::span<elf::Sym<E>> elf_local_symbols_;
   std::span<elf::Sym<E>> elf_global_symbols_;
 

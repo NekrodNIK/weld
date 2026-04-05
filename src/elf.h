@@ -7,6 +7,7 @@
 #include <cassert>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -57,7 +58,21 @@ enum : u32 {
   SHT_DYNSYM = 11,
 };
 
-enum : u32 { EV_CURRENT = 1 };
+enum : u32 {
+  SHN_UNDEF = 0,
+  SHN_ABS = 0xFFF1,
+  SHN_COMMON = 0xFFF2,
+};
+
+enum : u32 {
+  STB_WEAK = 2,
+  STB_LOCAL = 1,
+  STB_GLOBAL = 2,
+};
+
+enum : u32 {
+  EV_CURRENT = 1,
+};
 
 template <typename E>
 struct Ehdr;
@@ -176,9 +191,10 @@ std::optional<std::span<Shdr<E>>> get_shdr_table(std::span<u8> mem) {
   if (mem.size() < ehdr->e_shoff + ehdr->e_shnum * sizeof(Shdr<E>)) {
     return {};
   }
-  
-  // FIXME: It's probably best to check the alignment of the addresses in the file
-  // before converting types (you never know what address was written to the file).
+
+  // FIXME: It's probably best to check the alignment of the addresses in the
+  // file before converting types (you never know what address was written to
+  // the file).
   return std::span(reinterpret_cast<Shdr<E>*>(mem.data() + ehdr->e_shoff),
                    ehdr->e_shnum);
 }
@@ -200,7 +216,7 @@ get_symbols_symtab_or_dynsym(u8* mem, elf::Shdr<E>& shdr) {
 
   auto symbols = std::span(reinterpret_cast<elf::Sym<E>*>(mem + shdr.sh_offset),
                            shdr.sh_size / shdr.sh_entsize);
-  auto result = std::pair(symbols.subspan(0, shdr.sh_info - 1),
+  auto result = std::pair(symbols.subspan(0, shdr.sh_info),
                           symbols.subspan(shdr.sh_info));
   return result;
 }

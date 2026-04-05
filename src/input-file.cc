@@ -3,16 +3,19 @@
 #include "weld.h"
 #include <cassert>
 #include <memory>
+#include <print>
 #include <span>
 #include <utility>
 
 namespace weld {
 
-InputFile::InputFile(MappedFile&& mapped)
+template <typename E>
+InputFile<E>::InputFile(MappedFile&& mapped)
     : mapped_(std::forward<MappedFile>(mapped)) {}
 
 // TODO: make it easier to print filename
-std::unique_ptr<InputFile> InputFile::parse(MappedFile&& mapped) {
+template <typename E>
+std::unique_ptr<InputFile<E>> InputFile<E>::parse(MappedFile&& mapped) {
   if (!elf::is_elf(mapped.data())) {
     Fatal() << std::format("[{}] file is not elf", mapped.filename());
   }
@@ -61,6 +64,8 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
   }
 
   auto symtab_hdr = elf::find_shdr<E>(shdr_tab, elf::SHT_SYMTAB);
+  auto strtab_hdr = &shdr_tab[symtab_hdr->sh_link];
+  strtab = reinterpret_cast<char*>(mapped_.raw() + strtab_hdr->sh_offset);
 
   if (symtab_hdr) {
     if (auto result =
@@ -72,8 +77,6 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
       Fatal() << std::format("[{}] invalid .symtab section", filename());
     }
   }
-
-  // TODO: symbol resolution
 }
 
 template <typename E>
@@ -101,4 +104,33 @@ SharedObjectFile<E>::SharedObjectFile(MappedFile&& mapped)
 
   // TODO: symbol resolution
 }
+
+template <typename E>
+void ObjectFile<E>::symbol_resolution(Context<E>& ctx) {
+  for (const elf::Sym<E>& elf_sym : elf_global_symbols_) {
+    auto name = reinterpret_cast<const char*>(strtab + elf_sym.st_name);
+    std::println("{}", name);
+
+    if (ctx.symbol_map.contains(name)) {
+      if (ctx.symbol_map[name].esym->st_shndx == elf::SHN_UNDEF) {
+        ctx.symbol_map[name].esym = &elf_sym;
+      } else {
+        if (ctx.symbol_map[name].esym->st_info & elf::STB_WEAK) {
+          if (!(elf_sym.st_info & elf::STB_WEAK)) {
+            ctx.symbol_map[name].esym = &elf_sym;
+          }
+        } else {
+          if (!(elf_sym.st_info & elf::STB_WEAK)) {
+            Fatal() << "duplicate definition"; // FIXME
+          }
+        }
+      }
+    } else {
+      ctx.symbol_map[name] = Symbol<E>{.esym = &elf_sym, .name = name};
+    }
+  }
+}
+
+template class ObjectFile<arch::i386>;
+template class ObjectFile<arch::x86_64>;
 } // namespace weld
