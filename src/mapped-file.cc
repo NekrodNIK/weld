@@ -1,6 +1,8 @@
 #include "weld.h"
 #include <filesystem>
 #include <optional>
+#include <span>
+#include <string_view>
 #include <utility>
 
 namespace weld {
@@ -23,12 +25,19 @@ std::optional<MappedFile> MappedFile::open(const fs::path& path) {
   }
   MappedFile file;
   if (file.map(path.c_str())) {
+    file.filename_ = path.filename();
     return file;
   } else {
     return {};
   }
 }
 
-span<uint8_t> MappedFile::data() { return std::span(ptr_, size_); }
 MappedFile::~MappedFile() { unmap(); }
+std::string_view MappedFile::filename() const { return filename_; }
+std::span<const u8> MappedFile::data() const { return std::span(ptr_, size_); }
+const u8* MappedFile::raw() const { return ptr_; }
+size_t MappedFile::size() const { return size_; }
+std::span<u8> MappedFile::data() { return std::span(ptr_, size_); }
+u8* MappedFile::raw() { return ptr_; }
+
 } // namespace weld
