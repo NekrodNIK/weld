@@ -45,7 +45,7 @@ public:
 
 template<typename E>
 struct Relocation {
-  elf::Rela<E>* elf_rela;
+  elf::Rela<E> elf_rela;
   std::string symbol_name;
 };
 
@@ -54,25 +54,28 @@ template <typename E>
 struct MergedSection {
   std::string name;
   size_t addr = 0;
+  size_t file_off = 0;
   size_t alignment = 0;
   std::vector<u8> data;
   std::vector<Relocation<E>> relocations; // FIXME
 };
 
-template <typename E>
-struct Symbol {
-  elf::Sym<E>* esym;
-  MergedSection<E>* section;
-  std::string_view name;
-};
 
 template <typename E>
 struct InputSection {
   std::span<u8> data;
   elf::Shdr<E>* elf_hdr;
   std::vector<Relocation<E>> relocations; // FIXME
+  int offset;
 };
 
+template <typename E>
+struct Symbol {
+  elf::Sym<E>* esym;
+  MergedSection<E>* section;
+  InputSection<E>* input_section;
+  std::string_view name;
+};
 
 template <typename E>
 struct Context {

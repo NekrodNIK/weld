@@ -17,6 +17,7 @@ process_input(std::vector<MappedFile>& mapped_files) {
   for (auto& mapped : mapped_files) {
     if (archive::is_ar(mapped.data())) {
       auto members = archive::ArReader::extractMembers(mapped);
+      Warn() << members.size() << '\n';
       for (auto& [name, memberFile] : members) {
         auto input = weld::InputFile<E>::parse(std::move(memberFile));
         if (input) {

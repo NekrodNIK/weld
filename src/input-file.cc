@@ -57,21 +57,27 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
   }
 
   auto symtab_hdr = elf::find_shdr<E>(elf_shdr_tab_, elf::SHT_SYMTAB);
-  auto strtab_hdr = &elf_shdr_tab_[symtab_hdr->sh_link];
+  if (symtab_hdr) {
+    auto strtab_hdr = &elf_shdr_tab_[symtab_hdr->sh_link];
+    elf_strtab_ = std::string_view(
+        reinterpret_cast<char*>(this->mapped_.raw() + strtab_hdr->sh_offset),
+        strtab_hdr->sh_size);
+  } else {
+    static const char empty = '\0';
+    elf_strtab_ = std::string_view(&empty, 0);
+  }
   auto shstrtab_hdr = &elf_shdr_tab_[ehdr->e_shstrndx];
-  elf_strtab_ = std::string_view(
-      reinterpret_cast<char*>(this->mapped_.raw() + strtab_hdr->sh_offset),
-      strtab_hdr->sh_size);
   elf_shstrtab_ = std::string_view(
       reinterpret_cast<char*>(this->mapped_.raw() + shstrtab_hdr->sh_offset),
       shstrtab_hdr->sh_size);
-  input_sections_ = std::vector<InputSection<E>>(elf_shdr_tab_.size());
+  input_sections_ = std::vector<InputSection<E>>();
 
-  for (auto [i, shdr] : std::views::enumerate(elf_shdr_tab_)) {
-    input_sections_[i].data =
+  for (auto& shdr : elf_shdr_tab_) {
+    InputSection<E> sec;
+    sec.data =
         std::span(reinterpret_cast<u8*>(this->mapped_.raw() + shdr.sh_offset),
                   shdr.sh_size);
-    input_sections_[i].elf_hdr = &shdr;
+    sec.elf_hdr = &shdr;
 
     if (shdr.sh_type == elf::SHT_RELA) {
       auto relas = std::span(
@@ -81,13 +87,16 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
         auto symbol_name =
             elf_strtab_
                 .substr(reinterpret_cast<elf::Sym<E>*>(
-                            this->mapped_.raw() + symtab_hdr->sh_offset)[rela.r_info >> 32]
+                            this->mapped_.raw() +
+                            symtab_hdr->sh_offset)[rela.r_info >> 32]
                             .st_name)
                 .data(); // FIXME
-        input_sections_[shdr.sh_info].relocations.push_back(
-            Relocation<E>{.elf_rela = &rela, .symbol_name = symbol_name});
+        sec.relocations.push_back(
+            Relocation<E>{.elf_rela = rela, .symbol_name = symbol_name});
       }
+      continue;
     }
+    input_sections_.push_back(sec);
   }
 
   if (symtab_hdr) {
@@ -131,47 +140,27 @@ template <typename E>
 void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
   for (elf::Sym<E>& elf_sym : elf_global_symbols_) {
     auto name = elf_strtab_.substr(elf_sym.st_name).data();
-
-    // FIXME
     
-    auto section_name = "";
-    if (elf_sym.st_shndx != elf::SHN_UNDEF) {
-      section_name = elf_shstrtab_.substr(elf_shdr_tab_[elf_sym.st_shndx].sh_name).data();
-    }
-    auto section =
-        &(ctx.merged_sections[section_name] = {.name = section_name});
-    //
-
-    auto sym = Symbol<E>{.esym = &elf_sym, .section = section, .name = name};
-
     if (elf_sym.st_shndx == elf::SHN_UNDEF) {
       if (!ctx.symbol_map.contains(name)) {
-        ctx.symbol_map[name] = sym;
+        ctx.symbol_map[name] = Symbol<E>{.esym = &elf_sym, .section = nullptr, .input_section = nullptr, .name = name};
       }
       continue;
     }
-
-    Symbol<E>* in_map;
-    if (ctx.symbol_map.contains(name)) {
-      in_map = &ctx.symbol_map[name];
-    } else {
-      in_map = &(ctx.symbol_map[name] = sym);
-    }
-
-    if (sym.esym->st_shndx == elf::SHN_COMMON &&
-        in_map->esym->st_shndx == elf::SHN_COMMON) {
-      if (sym.esym->st_size > in_map->esym->st_size)
-        *in_map = sym;
-      continue;
-    }
-
-    auto in_map_weak = in_map->esym->st_info & elf::STB_WEAK;
-    auto sym_weak = sym.esym->st_info & elf::STB_WEAK;
-
-    if (in_map_weak && !sym_weak) {
-      *in_map = sym;
-    } else if (!in_map_weak && !sym_weak) {
-      Fatal() << std::format("duplicate definition: {}", name);
+    
+    if (elf_sym.st_shndx >= elf_shdr_tab_.size()) continue;
+    
+    auto section_name = elf_shstrtab_.substr(elf_shdr_tab_[elf_sym.st_shndx].sh_name).data();
+    auto& merged = ctx.merged_sections[section_name];
+    auto& input_sec = input_sections_[elf_sym.st_shndx];
+    
+    auto sym = Symbol<E>{.esym = &elf_sym, .section = &merged, .input_section = &input_sec, .name = name};
+    
+    auto it = ctx.symbol_map.find(name);
+    if (it == ctx.symbol_map.end()) {
+      ctx.symbol_map[name] = sym;
+    } else if (it->second.esym->st_shndx == elf::SHN_UNDEF) {
+      it->second = sym;
     }
   }
 }
@@ -179,31 +168,22 @@ void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
 template <typename E>
 void ObjectFile<E>::merge_sections(Context<E>& ctx) {
   for (InputSection<E>& input_section : input_sections_) {
-    if (input_section.elf_hdr->sh_type == elf::SHT_NOBITS || input_section.elf_hdr->sh_type == elf::SHT_PROGBITS) {
-      continue;        
+    auto name = elf_shstrtab_.substr(input_section.elf_hdr->sh_name).data();
+    auto& merged = ctx.merged_sections[name];
+    
+    input_section.offset = merged.data.size();
+    
+    merged.data.insert(merged.data.end(), input_section.data.begin(), input_section.data.end());
+    
+    for (auto& rel : input_section.relocations) {
+      elf::Rela<E> new_rel = rel.elf_rela;
+      new_rel.r_offset += input_section.offset;
+      merged.relocations.push_back(Relocation<E>{.elf_rela = new_rel, .symbol_name = rel.symbol_name});
     }
     
-    auto name = elf_shstrtab_.substr(input_section.elf_hdr->sh_name).data();
-    if (!ctx.merged_sections.contains(name)) {
-      ctx.merged_sections[name] = MergedSection<E>{
-          .name = name,
-          .addr = 0,
-          .alignment = static_cast<size_t>(input_section.elf_hdr->sh_addralign),
-          .data = std::vector<u8>(),
-          .relocations = std::vector<Relocation<E>>(),
-      };
-    } else {
-      auto alignment = input_section.elf_hdr->sh_addralign;
-      if (alignment > ctx.merged_sections[name].alignment) {
-        ctx.merged_sections[name].alignment = alignment;
-      }
+    if (input_section.elf_hdr->sh_addralign > merged.alignment) {
+      merged.alignment = input_section.elf_hdr->sh_addralign;
     }
-    ctx.merged_sections[name].data.insert(ctx.merged_sections[name].data.end(),
-                                          input_section.data.begin(),
-                                          input_section.data.end());
-    ctx.merged_sections[name].relocations.insert(
-        ctx.merged_sections[name].relocations.end(),
-        input_section.relocations.begin(), input_section.relocations.end());
   }
 }
 
