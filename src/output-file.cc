@@ -23,10 +23,8 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
 
   for (auto& [name, merged] : ctx.merged_sections) {
     cur_addr = align_addr(cur_addr, merged.align);
-    auto output =
-        OutputSection<E>{.name = name, .data = merged.data, .addr = cur_addr};
-    name_to_section[name] = &output;
-    ctx.output_sections.push_back(output);
+    ctx.output_sections.push_back({.name = name, .data = merged.data, .addr = cur_addr});
+    name_to_section[name] = &ctx.output_sections.back();
     cur_addr += merged.data.size();
   }
 
