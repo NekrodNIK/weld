@@ -8,6 +8,7 @@
 #include <fstream>
 #include <print>
 #include <sys/stat.h>
+#include <unordered_map>
 #include <vector>
 
 constexpr auto start_addr = 0x400000;
@@ -18,18 +19,20 @@ template <typename E>
 void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   size_t cur_addr = start_addr;
 
+  static std::unordered_map<std::string, OutputSection<E>*> name_to_section;
+
   for (auto& [name, merged] : ctx.merged_sections) {
     cur_addr = align_addr(cur_addr, merged.align);
-    ctx.output_sections[name] = OutputSection<E>{
-        .data = merged.data,
-        .addr = cur_addr,
-    };
+    auto output =
+        OutputSection<E>{.name = name, .data = merged.data, .addr = cur_addr};
+    name_to_section[name] = &output;
+    ctx.output_sections.push_back(output);
     cur_addr += merged.data.size();
   }
 
   auto set_addr = [&ctx](auto& sym) {
     if (sym.is_defined()) {
-      sym.output_section = &ctx.output_sections[sym.input_section->name];
+      sym.output_section = name_to_section[sym.input_section->name];
       sym.addr += sym.output_section->addr + sym.input_section->offset;
       std::println("section: {}, symbol: {}, addr: {:X}",
                    sym.input_section->name, sym.name, sym.addr);
@@ -46,7 +49,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   for (auto& [name, sec] : ctx.merged_sections) {
     for (Relocation<E>& rel : sec.relocations) {
       auto S = ctx.symbol_map[rel.symbol_name].addr;
-      auto P = ctx.output_sections[name].addr + rel.rela.r_offset;
+      auto P = name_to_section[name]->addr + rel.rela.r_offset;
       auto A = rel.rela.r_addend;
 
       constexpr auto R_X86_64_64 = 1;
@@ -83,10 +86,10 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   std::vector<u8> rw_bytes;
   size_t bss_size = 0;
 
-  for (auto& [name, section] : ctx.output_sections) {
-    if (name.find(".bss") == 0) {
+  for (auto& section : ctx.output_sections) {
+    if (section.name.find(".bss") == 0) {
       bss_size += section.data.size();
-    } else if (name.find(".text") == 0 || name.find(".rodata") == 0) {
+    } else if (section.name.find(".text") == 0 || section.name.find(".rodata") == 0) {
       re_bytes.insert(re_bytes.end(), section.data.begin(), section.data.end());
     } else {
       rw_bytes.insert(rw_bytes.end(), section.data.begin(), section.data.end());

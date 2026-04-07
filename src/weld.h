@@ -93,6 +93,7 @@ public:
 template <typename E>
 class OutputSection {
 public:
+  std::string name;
   std::vector<u8> data;
   size_t addr;
 };
@@ -143,8 +144,7 @@ public:
   std::unordered_map<std::string, Symbol<E>, string_hash> symbol_map;
   std::unordered_map<std::string, MergedSection<E>, string_hash>
       merged_sections;
-  std::unordered_map<std::string, OutputSection<E>, string_hash>
-      output_sections;
+  std::vector<OutputSection<E>> output_sections;
   std::vector<Symbol<E>> local_symbols;
 };
 template <typename T, typename V>
