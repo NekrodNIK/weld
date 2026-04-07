@@ -173,9 +173,10 @@ void ObjectFile<E>::merge_sections(Context<E>& ctx) {
 
     for (elf::Rela<E> rela : input.rela_tab) {
       auto ind = rela.r_sym();
-      auto& symtab =
-          ind < local_symtab_.size() ? local_symtab_ : non_local_symtab_;
-      auto symbol_name = strtab_ + symtab[ind].st_name;
+      auto& elf_struct = ind < local_symtab_.size()
+                             ? local_symtab_[ind]
+                             : non_local_symtab_[ind - local_symtab_.size()];
+      auto symbol_name = strtab_ + elf_struct.st_name;
 
       rela.r_offset += input.offset;
       merged.relocations.push_back({

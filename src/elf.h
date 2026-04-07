@@ -210,9 +210,9 @@ struct Rela {
   sword<E> r_addend;
   size_t r_sym() {
     if constexpr (E::is_64) {
-      return r_offset >> 32;
+      return r_info >> 32;
     } else {
-      return r_offset >> 8;
+      return r_info >> 8;
     }
   }
 };
