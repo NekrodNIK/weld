@@ -26,6 +26,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
     
     cur_addr = align_addr(cur_addr, merged.align);
     ctx.output_sections.push_back({.name = name, .data = merged.data, .addr = cur_addr});
+    output_sec_ind[name] = ctx.output_sections.size() - 1;
     cur_addr += merged.data.size();
   }
   
@@ -35,6 +36,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
     
     cur_addr = align_addr(cur_addr, merged.align);
     ctx.output_sections.push_back({.name = name, .data = merged.data, .addr = cur_addr});
+    output_sec_ind[name] = ctx.output_sections.size() - 1;
     cur_addr += merged.data.size();
   }
 
