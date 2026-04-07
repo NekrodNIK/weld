@@ -18,26 +18,7 @@ template <typename E>
 void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   size_t cur_addr = start_addr;
 
-  // for (auto& [name, merged] : ctx.merged_sections) {
-  //   cur_addr = align_addr(cur_addr, merged.align);
-  //   ctx.output_sections[name] = OutputSection<E>{
-  //       .data = merged.data,
-  //       .addr = cur_addr,
-  //   };
-  //   cur_addr += merged.data.size();
-  // }
-if (ctx.merged_sections.contains(".text")) {
-    auto& merged = ctx.merged_sections[".text"];
-    cur_addr = align_addr(cur_addr, merged.align);
-    ctx.output_sections[".text"] = OutputSection<E>{
-        .data = merged.data,
-        .addr = cur_addr,
-    };
-    cur_addr += merged.data.size();
-  }
-
   for (auto& [name, merged] : ctx.merged_sections) {
-    if (name == ".text") continue;
     cur_addr = align_addr(cur_addr, merged.align);
     ctx.output_sections[name] = OutputSection<E>{
         .data = merged.data,
@@ -45,6 +26,7 @@ if (ctx.merged_sections.contains(".text")) {
     };
     cur_addr += merged.data.size();
   }
+
   auto set_addr = [&ctx](auto& sym) {
     if (sym.is_defined()) {
       sym.output_section = &ctx.output_sections[sym.input_section->name];
