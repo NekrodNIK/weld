@@ -11,7 +11,6 @@ srcs = [
   'src/input-file.cc',
   'src/mapped-file.cc',
   'src/elf.cc',
-  'src/error.cc',
   'src/cli_parser.cc',
   'src/arch.cc',
   'src/output-file.cc',
