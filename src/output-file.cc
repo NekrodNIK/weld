@@ -22,9 +22,19 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   static std::unordered_map<std::string, size_t> output_sec_ind;
 
   for (auto& [name, merged] : ctx.merged_sections) {
+    if (name.find(".text") != 0 && name.find(".rodata") != 0) continue;
+    
     cur_addr = align_addr(cur_addr, merged.align);
     ctx.output_sections.push_back({.name = name, .data = merged.data, .addr = cur_addr});
-    output_sec_ind[name] = ctx.output_sections.size() - 1;
+    cur_addr += merged.data.size();
+  }
+  
+  cur_addr = align_addr(cur_addr, 0x1000);
+  for (auto& [name, merged] : ctx.merged_sections) {
+    if (name.find(".text") == 0 || name.find(".rodata") == 0) continue;
+    
+    cur_addr = align_addr(cur_addr, merged.align);
+    ctx.output_sections.push_back({.name = name, .data = merged.data, .addr = cur_addr});
     cur_addr += merged.data.size();
   }
 
