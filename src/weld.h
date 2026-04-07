@@ -1,7 +1,5 @@
 #pragma once
-#include "elf.h"
 #include "ints.h"
-#include "mapped-file.h"
 #include <cassert>
 #include <cstddef>
 #include <filesystem>
@@ -10,6 +8,8 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+#include "mapped-file.h"
+#include "elf.h"
 
 namespace weld {
 template <typename E>

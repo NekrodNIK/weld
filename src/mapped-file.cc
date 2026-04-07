@@ -49,7 +49,7 @@ MappedFile MappedFile::slice(size_t offset, size_t size) const {
   std::string child_name = filename_ + "[" + std::to_string(offset) + ":" +
                            std::to_string(size) + "]";
   MappedFile mapped;
-  mapped.ptr_ = ptr_ + size;
+  mapped.ptr_ = ptr_ + offset;
   mapped.size_ = size;
   mapped.owns_ = false;
   mapped.filename_ = child_name;

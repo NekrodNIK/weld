@@ -43,6 +43,19 @@ enum : u32 {
 };
 
 enum : u32 {
+  SHF_WRITE = 0x1,
+  SHF_ALLOC = 0x2,
+  SHF_EXECINSTR = 0x4,
+};
+
+enum : u32 {
+  STT_OBJECT = 1,
+  STT_FUNC = 2,
+  STT_SECTION = 3,
+  STT_FILE = 4,
+};
+
+enum : u32 {
   SHT_NULL = 0,
   SHT_PROGBITS = 1,
   SHT_SYMTAB = 2,
@@ -166,6 +179,7 @@ struct Sym {
   unsigned char st_other;
   u16 st_shndx;
   u8 st_bind() const { return st_info >> 4; }
+  u8 st_type() const { return st_info & 0xf; }
 };
 template <typename E>
   requires(E::is_64)
@@ -177,6 +191,7 @@ struct Sym<E> {
   u64 st_value;
   u64 st_size;
   u8 st_bind() const { return st_info >> 4; }
+  u8 st_type() const { return st_info & 0xf; }
 };
 template <typename E>
 struct Dyn {

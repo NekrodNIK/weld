@@ -135,6 +135,10 @@ void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
   }
 
   for (elf::Sym<E>& elf_struct : local_symtab_) {
+    if (elf_struct.st_type() == elf::STT_FILE)
+      continue;
+    if (elf_struct.st_type() == elf::STT_SECTION)
+      continue;
     auto name = strtab_ + elf_struct.st_name;
     InputSection<E>* input_section;
     if (elf_struct.st_shndx >= shdr_tab_.size()) {

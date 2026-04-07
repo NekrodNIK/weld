@@ -1,5 +1,6 @@
 #include "weld.h"
 #include <ar.h>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -57,10 +58,7 @@ struct ArchiveMember {
 struct Archive {
   std::vector<ArchiveMember> files;
 
-  bool operator==(Archive& other) {
-    // TODO
-    return true;
-  }
+  bool operator==(Archive& other) { return true; }
 
   void print() {
     for (auto a : files) {
@@ -131,50 +129,51 @@ public:
     size_t archiveSize = archive.size();
 
     if (archiveSize < SARMAG || std::memcmp(data, ARMAG, SARMAG) != 0) {
-      throw std::runtime_error("Invalid MappedFile. Size < SARMAG");
+      throw std::runtime_error("Invalid MappedFile");
     }
 
     size_t offset = SARMAG;
     while (offset + sizeof(FileHeader) <= archiveSize) {
-      const FileHeader* header =
-          reinterpret_cast<const FileHeader*>(data + offset);
-      if (header->ar_fmag[0] != '`' || header->ar_fmag[1] != '\n') {
+      FileHeader header;
+      memcpy(&header, data + offset, sizeof(FileHeader));
+
+      if (header.ar_fmag[0] != '`' || header.ar_fmag[1] != '\n') {
         break;
       }
 
       char sizeChar[11] = {0};
-      std::memcpy(sizeChar, header->ar_size, 10);
-      long size = std::strtol(sizeChar, nullptr, sizeof(FileHeader::ar_size));
-
-      if (size < 0) {
-        throw std::runtime_error("Size of file in archive is negative");
-      }
+      memcpy(sizeChar, header.ar_size, 10);
+      long size = strtol(sizeChar, nullptr, 10);
 
       char nameChar[17] = {0};
-      std::memcpy(nameChar, header->ar_name, sizeof(FileHeader::ar_name));
+      memcpy(nameChar, header.ar_name, sizeof(FileHeader::ar_name));
       std::string name(nameChar);
       name.erase(name.find_last_not_of(' ') + 1);
 
-      if (name == "/" || name == "//") {
+      if (name == "/" || name == "//" || (name[0] == '/' && name.size() > 1)) {
         offset += sizeof(FileHeader) + size;
-        if (size % 2 != 0) {
+        if (size % 2 != 0)
           offset++;
-        }
         continue;
       }
 
       if (offset + sizeof(FileHeader) + size <= archiveSize) {
-        weld::MappedFile slice =
-            archive.slice(offset + sizeof(FileHeader), size);
-        members.emplace_back(std::move(name), std::move(slice));
-      } else {
-        break;
+        char tmpname[] = "/tmp/weld_XXXXXX";
+        int fd = mkstemp(tmpname);
+        if (fd != -1) {
+          write(fd, data + offset + sizeof(FileHeader), size);
+          close(fd);
+
+          weld::MappedFile slice = weld::MappedFile::open(tmpname);
+          members.emplace_back(std::move(name), std::move(slice));
+
+          unlink(tmpname);
+        }
       }
 
       offset += sizeof(FileHeader) + size;
-      if (size % 2 != 0) {
+      if (size % 2 != 0)
         offset++;
-      }
     }
     return members;
   }

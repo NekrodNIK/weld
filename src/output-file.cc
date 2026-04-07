@@ -18,7 +18,26 @@ template <typename E>
 void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   size_t cur_addr = start_addr;
 
+  // for (auto& [name, merged] : ctx.merged_sections) {
+  //   cur_addr = align_addr(cur_addr, merged.align);
+  //   ctx.output_sections[name] = OutputSection<E>{
+  //       .data = merged.data,
+  //       .addr = cur_addr,
+  //   };
+  //   cur_addr += merged.data.size();
+  // }
+if (ctx.merged_sections.contains(".text")) {
+    auto& merged = ctx.merged_sections[".text"];
+    cur_addr = align_addr(cur_addr, merged.align);
+    ctx.output_sections[".text"] = OutputSection<E>{
+        .data = merged.data,
+        .addr = cur_addr,
+    };
+    cur_addr += merged.data.size();
+  }
+
   for (auto& [name, merged] : ctx.merged_sections) {
+    if (name == ".text") continue;
     cur_addr = align_addr(cur_addr, merged.align);
     ctx.output_sections[name] = OutputSection<E>{
         .data = merged.data,
@@ -26,7 +45,6 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
     };
     cur_addr += merged.data.size();
   }
-
   auto set_addr = [&ctx](auto& sym) {
     if (sym.is_defined()) {
       sym.output_section = &ctx.output_sections[sym.input_section->name];
@@ -35,7 +53,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
                    sym.input_section->name, sym.name, sym.addr);
     }
   };
-  
+
   for (auto& [_, sym] : ctx.symbol_map) {
     set_addr(sym);
   }
@@ -76,6 +94,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   }
 }
 
+// TODO: refactoring
 template <typename E>
 void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   std::vector<u8> re_bytes;
@@ -92,22 +111,7 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
     }
   }
 
-  elf::Ehdr<E> ehdr;
-  memcpy(ehdr.e_ident,
-         "\x7f\x45\x4c\x46\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-         16);
-  ehdr.e_type = elf::ET_EXEC;
-  ehdr.e_machine = 62;
-  ehdr.e_version = 1;
-  ehdr.e_entry = ctx.symbol_map["_start"].addr;
-  ehdr.e_phoff = sizeof(ehdr);
-  ehdr.e_phentsize = sizeof(elf::Phdr<E>);
-  ehdr.e_phnum = 2;
-  ehdr.e_shoff = 0;
-  ehdr.e_shnum = 0;
-  ehdr.e_shstrndx = 0;
-
-  size_t headers_size = sizeof(ehdr) + 2 * sizeof(elf::Phdr<E>);
+  size_t headers_size = sizeof(elf::Ehdr<E>) + 2 * sizeof(elf::Phdr<E>);
   size_t re_offset = align_addr(headers_size, 0x1000);
   size_t re_vaddr = start_addr;
 
@@ -134,18 +138,124 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   phdr_rw.p_filesz = rw_bytes.size();
   phdr_rw.p_memsz = rw_bytes.size() + bss_size;
 
-  std::vector<u8> buf(rw_offset + rw_bytes.size());
+  std::vector<elf::Sym<E>> symtab;
+  std::vector<char> strtab{'\0'};
+  std::vector<char> shstrtab{'\0'};
+  std::vector<elf::Shdr<E>> shdr_tab(1);
+
+  auto process_symbol = [&symtab, &strtab](Symbol<E>& symbol) {
+    elf::Sym<E> elf_struct = {};
+    elf_struct.st_name = strtab.size();
+    elf_struct.st_info =
+        (symbol.is_weak ? elf::STB_WEAK : elf::STB_GLOBAL) << 4 | elf::STT_FUNC;
+    elf_struct.st_other = 0;
+    elf_struct.st_shndx = 1;
+    elf_struct.st_value = symbol.addr;
+    elf_struct.st_size = 0;
+
+    symtab.push_back(elf_struct);
+
+    strtab.resize(strtab.size() + symbol.name.size() + 1);
+    memcpy(strtab.data() + elf_struct.st_name, symbol.name.c_str(),
+           symbol.name.size() + 1);
+  };
+
+  for (auto& symbol : ctx.local_symbols)
+    process_symbol(symbol);
+  for (auto& [_, symbol] : ctx.symbol_map)
+    process_symbol(symbol);
+
+  auto process_section = [&shdr_tab,
+                          &shstrtab](const std::string& name, u32 type,
+                                     u32 flags, size_t offset, size_t size,
+                                     size_t addr, u32 link = 0, u32 info = 0) {
+    elf::Shdr<E> shdr = {};
+    shdr.sh_name = shstrtab.size();
+    shdr.sh_type = type;
+    shdr.sh_flags = flags;
+    shdr.sh_addr = addr;
+    shdr.sh_offset = offset;
+    shdr.sh_size = size;
+    shdr.sh_link = link;
+    shdr.sh_info = info;
+    shdr.sh_addralign = 1;
+    shdr.sh_entsize = (type == elf::SHT_SYMTAB) ? sizeof(elf::Sym<E>) : 0;
+
+    shdr_tab.push_back(shdr);
+
+    shstrtab.resize(shstrtab.size() + name.size() + 1);
+    memcpy(shstrtab.data() + shdr.sh_name, name.c_str(), name.size() + 1);
+  };
+
+  process_section(".text", elf::SHT_PROGBITS,
+                  elf::SHF_ALLOC | elf::SHF_EXECINSTR, re_offset,
+                  re_bytes.size(), re_vaddr);
+  process_section(".rodata", elf::SHT_PROGBITS, elf::SHF_ALLOC,
+                  re_offset + re_bytes.size(), 0, re_vaddr + re_bytes.size());
+  process_section(".data", elf::SHT_PROGBITS, elf::SHF_ALLOC | elf::SHF_WRITE,
+                  rw_offset, rw_bytes.size(), rw_vaddr);
+  process_section(".bss", elf::SHT_NOBITS, elf::SHF_ALLOC | elf::SHF_WRITE, 0,
+                  bss_size, rw_vaddr + rw_bytes.size());
+
+  size_t symtab_offset = align_addr(rw_offset + rw_bytes.size(), 0x1000);
+  size_t sym_idx = shdr_tab.size();
+  process_section(".symtab", elf::SHT_SYMTAB, 0, symtab_offset,
+                  symtab.size() * sizeof(elf::Sym<E>), 0, 0, 1);
+
+  size_t strtab_offset =
+      align_addr(symtab_offset + symtab.size() * sizeof(elf::Sym<E>), 0x1000);
+  size_t str_idx = shdr_tab.size();
+  process_section(".strtab", elf::SHT_STRTAB, 0, strtab_offset, 0, 0);
+  shdr_tab[str_idx].sh_size = strtab.size();
+
+  size_t shdr_tab_offset = align_addr(strtab_offset + strtab.size(), 0x1000);
+
+  size_t shstrtab_offset = align_addr(
+      shdr_tab_offset + shdr_tab.size() * sizeof(elf::Shdr<E>), 0x1000);
+  size_t shstr_idx = shdr_tab.size();
+  process_section(".shstrtab", elf::SHT_STRTAB, 0, shstrtab_offset, 0, 0);
+  shdr_tab[shstr_idx].sh_size = shstrtab.size();
+
+  shdr_tab[sym_idx].sh_link = str_idx;
+  shdr_tab[sym_idx].sh_info = 1;
+
+  elf::Ehdr<E> ehdr;
+  memcpy(ehdr.e_ident,
+         "\x7f\x45\x4c\x46\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+         16);
+  ehdr.e_type = elf::ET_EXEC;
+  ehdr.e_machine = 62;
+  ehdr.e_version = 1;
+  ehdr.e_entry = ctx.symbol_map["_start"].addr;
+  ehdr.e_phoff = sizeof(ehdr);
+  ehdr.e_phentsize = sizeof(elf::Phdr<E>);
+  ehdr.e_phnum = 2;
+  ehdr.e_shoff = shdr_tab_offset;
+  ehdr.e_shentsize = sizeof(elf::Shdr<E>);
+  ehdr.e_shnum = shdr_tab.size();
+  ehdr.e_shstrndx = shstr_idx;
+
+  size_t total_size = shstrtab_offset + shstrtab.size();
+  std::vector<u8> buf(total_size);
 
   memcpy(buf.data(), &ehdr, sizeof(ehdr));
   memcpy(buf.data() + sizeof(ehdr), &phdr_re, sizeof(phdr_re));
   memcpy(buf.data() + sizeof(ehdr) + sizeof(phdr_re), &phdr_rw,
          sizeof(phdr_rw));
-  if (!re_bytes.empty()) {
+  if (!re_bytes.empty())
     memcpy(buf.data() + re_offset, re_bytes.data(), re_bytes.size());
-  }
-  if (!rw_bytes.empty()) {
+  if (!rw_bytes.empty())
     memcpy(buf.data() + rw_offset, rw_bytes.data(), rw_bytes.size());
-  }
+  if (!symtab.empty())
+    memcpy(buf.data() + symtab_offset, symtab.data(),
+           symtab.size() * sizeof(elf::Sym<E>));
+  if (!strtab.empty())
+    memcpy(buf.data() + strtab_offset, strtab.data(), strtab.size());
+  if (!shdr_tab.empty())
+    memcpy(buf.data() + shdr_tab_offset, shdr_tab.data(),
+           shdr_tab.size() * sizeof(elf::Shdr<E>));
+  if (!shstrtab.empty())
+    memcpy(buf.data() + shstrtab_offset, shstrtab.data(), shstrtab.size());
 
   std::ofstream out(path, std::ios::binary);
   out.write(reinterpret_cast<char*>(buf.data()), buf.size());

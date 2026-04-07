@@ -1,6 +1,6 @@
 #pragma once
 #include "ints.h"
-#include "src/errors.h"
+#include "errors.h"
 #include <format>
 #include <ostream>
 #include <type_traits>
