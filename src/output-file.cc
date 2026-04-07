@@ -16,33 +16,24 @@ constexpr auto start_addr = 0x400000;
 namespace weld {
 template <typename E>
 // TODO: add -fpie support
+// TODO: refactoring
 void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   size_t cur_addr = start_addr;
 
   static std::unordered_map<std::string, size_t> output_sec_ind;
 
   for (auto& [name, merged] : ctx.merged_sections) {
-    if (name.find(".text") != 0 && name.find(".rodata") != 0) continue;
-    
     cur_addr = align_addr(cur_addr, merged.align);
-    ctx.output_sections.push_back({.name = name, .data = merged.data, .addr = cur_addr});
-    output_sec_ind[name] = ctx.output_sections.size() - 1;
-    cur_addr += merged.data.size();
-  }
-  
-  cur_addr = align_addr(cur_addr, 0x1000);
-  for (auto& [name, merged] : ctx.merged_sections) {
-    if (name.find(".text") == 0 || name.find(".rodata") == 0) continue;
-    
-    cur_addr = align_addr(cur_addr, merged.align);
-    ctx.output_sections.push_back({.name = name, .data = merged.data, .addr = cur_addr});
+    ctx.output_sections.push_back(
+        {.name = name, .data = merged.data, .addr = cur_addr});
     output_sec_ind[name] = ctx.output_sections.size() - 1;
     cur_addr += merged.data.size();
   }
 
   auto set_addr = [&ctx](auto& sym) {
     if (sym.is_defined()) {
-      sym.output_section = &ctx.output_sections[output_sec_ind[sym.input_section->name]];
+      sym.output_section =
+          &ctx.output_sections[output_sec_ind[sym.input_section->name]];
       sym.addr += sym.output_section->addr + sym.input_section->offset;
       std::println("section: {}, symbol: {}, addr: {:X}",
                    sym.input_section->name, sym.name, sym.addr);
@@ -59,7 +50,8 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   for (auto& [name, sec] : ctx.merged_sections) {
     for (Relocation<E>& rel : sec.relocations) {
       auto S = ctx.symbol_map[rel.symbol_name].addr;
-      auto P = ctx.output_sections[output_sec_ind[name]].addr + rel.rela.r_offset;
+      auto P =
+          ctx.output_sections[output_sec_ind[name]].addr + rel.rela.r_offset;
       auto A = rel.rela.r_addend;
 
       constexpr auto R_X86_64_64 = 1;
