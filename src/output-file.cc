@@ -1,64 +1,60 @@
 #include "src/arch.h"
 #include "src/elf.h"
 #include "weld.h"
+#include <cassert>
+#include <cstddef>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <print>
 #include <sys/stat.h>
 #include <vector>
 
-namespace {
-size_t align_addr(size_t addr, size_t align) {
-  return (addr + align - 1) & ~(align - 1);
-}
-}; // namespace
+constexpr auto start_addr = 0x400000;
+constexpr auto start_offset = 0x1000;
 
 namespace weld {
 template <typename E>
 // TODO: add -fpie support
 void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
-  auto cur_addr = 0x400000;
-  auto cur_off = 0x1000;
+  size_t cur_addr = start_addr;
 
-  for (auto& name : {".text", ".rodata", ".data", ".bss"}) {
-    MergedSection<E>& sec = ctx.merged_sections[name]; // FIXME
-    cur_addr = align_addr(cur_addr, sec.alignment);
-    cur_off = align_addr(cur_off, sec.alignment);
-    sec.addr = cur_addr;
-    sec.file_off = cur_off;
-    cur_addr += sec.data.size();
-    cur_off += sec.data.size();
+  for (auto& [name, merged] : ctx.merged_sections) {
+    cur_addr = align_addr(cur_addr, merged.align);
+    ctx.output_sections[name] = OutputSection<E>{
+        .data = merged.data,
+        .addr = cur_addr,
+    };
+    cur_addr += merged.data.size();
   }
 
   for (auto& [name, sym] : ctx.symbol_map) {
-    if (sym.section && sym.input_section) {
-        sym.esym->st_value = sym.section->addr + sym.input_section->offset + sym.esym->st_value;
-    }
-    if (name == "main" || name == "_start" || name == "foo") {
-      printf("%s: st_value=0x%lx, section=%p, section->addr=0x%lx\n",
-             name.c_str(), sym.esym->st_value, sym.section,
-             sym.section ? sym.section->addr : 0);
+    if (sym.is_defined()) {
+      sym.output_section = &ctx.output_sections[sym.input_section->name];
+      sym.addr += sym.output_section->addr + sym.input_section->offset;
+      std::println("section: {}, symbol: {}, addr: {:X}",
+                   sym.input_section->name, name, sym.addr);
     }
   }
 
   for (auto& [name, sec] : ctx.merged_sections) {
     for (Relocation<E>& rel : sec.relocations) {
-      auto S = ctx.symbol_map[rel.symbol_name].esym->st_value;
-      auto P = sec.addr + rel.elf_rela.r_offset;
-      auto A = rel.elf_rela.r_addend;
+      auto S = ctx.symbol_map[rel.symbol_name].addr;
+      auto P = ctx.output_sections[name].addr + rel.rela.r_offset;
+      auto A = rel.rela.r_addend;
 
       constexpr auto R_X86_64_64 = 1;
       constexpr auto R_X86_64_PC32 = 2;
 
-      switch (rel.elf_rela.r_info & 0xffffffffL) { // FIXME
-      case R_X86_64_64:
-        *reinterpret_cast<u64*>(sec.data.data() + rel.elf_rela.r_offset) =
-            S + A;
-        break;
-      case R_X86_64_PC32:
-        *reinterpret_cast<u32*>(sec.data.data() + rel.elf_rela.r_offset) =
-            S + A - P;
-        break;
+      auto type = rel.rela.r_info & 0xffffffffL; // FIXME
+      if (type == R_X86_64_64) {
+        auto result = S + A;
+        auto size = 8;
+        std::memcpy(sec.data.data() + rel.rela.r_offset, &result, size);
+      } else if (type == R_X86_64_PC32) {
+        auto result = S + A - P;
+        auto size = 4;
+        std::memcpy(sec.data.data() + rel.rela.r_offset, &result, size);
       }
     }
   }
@@ -67,12 +63,9 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
 template <typename E>
 void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   std::vector<u8> sections_data;
-  for (auto& name : {".text", ".rodata", ".data"}) {
-    if (ctx.merged_sections.contains(name)) {
-      auto& sec = ctx.merged_sections[name];
-      sections_data.insert(sections_data.end(), sec.data.begin(),
-                           sec.data.end());
-    }
+  for (auto& [name, section] : ctx.output_sections) {
+    sections_data.insert(sections_data.end(), section.data.begin(),
+                         section.data.end());
   }
 
   elf::Ehdr<E> ehdr = {};
@@ -82,7 +75,7 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   ehdr.e_type = elf::ET_EXEC;
   ehdr.e_machine = 62;
   ehdr.e_version = 1;
-  ehdr.e_entry = ctx.symbol_map["_start"].esym->st_value;
+  ehdr.e_entry = ctx.symbol_map["_start"].addr;
   ehdr.e_phoff = sizeof(ehdr);
   ehdr.e_phentsize = sizeof(elf::Phdr<E>);
   ehdr.e_phnum = 1;
@@ -97,8 +90,8 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
 
   size_t text_offset = align_addr(sizeof(ehdr) + sizeof(phdr), 0x1000);
   phdr.p_offset = text_offset;
-  phdr.p_vaddr = ctx.merged_sections[".text"].addr;
-  phdr.p_paddr = ctx.merged_sections[".text"].addr;
+  phdr.p_vaddr = ctx.output_sections[".text"].addr;
+  phdr.p_paddr = ctx.output_sections[".text"].addr;
   phdr.p_filesz = sections_data.size();
   phdr.p_memsz = sections_data.size();
 

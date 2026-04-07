@@ -2,13 +2,13 @@
 // However, this is not currently a problem,
 // as only the i386 and x86_64 architectures are supported.
 #pragma once
-#include "ints.h"
 #include "arch.h"
+#include "ints.h"
 #include <cassert>
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <type_traits>
-#include <utility>
 
 namespace weld::elf {
 enum : u32 {
@@ -190,43 +190,28 @@ struct Rela {
   word<E> r_offset;
   word<E> r_info;
   sword<E> r_addend;
+  size_t r_sym() {
+    if constexpr (E::is_64) {
+      return r_offset >> 32;
+    } else {
+      return r_offset >> 8;
+    }
+  }
 };
 
-bool is_elf(std::span<const u8> mem);
-arch::Enum get_arch(std::span<const u8> mem);
-
+bool is_elf(std::span<const u8> file);
+arch::Enum get_arch(std::span<const u8> file);
 template <typename E>
-std::optional<std::span<Shdr<E>>> get_shdr_table(std::span<u8> mem) {
-  elf::Ehdr<E>* ehdr = reinterpret_cast<elf::Ehdr<E>*>(mem.data());
-  if (mem.size() < ehdr->e_shoff + ehdr->e_shnum * sizeof(Shdr<E>)) {
-    return {};
-  }
-  // FIXME: It's probably best to check the alignment of the addresses in the file
-  // before converting types (you never know what address was written to the file).
-  return std::span(reinterpret_cast<Shdr<E>*>(mem.data() + ehdr->e_shoff),
-                   ehdr->e_shnum);
-}
-
+Ehdr<E>& get_ehdr(std::span<u8> file);
 template <typename E>
-Shdr<E>* find_shdr(std::span<elf::Shdr<E>> shdr_tab, u32 type) {
-  for (Shdr<E>& shdr : shdr_tab)
-    if (shdr.sh_type == type)
-      return &shdr;
-  return nullptr;
-}
-
+std::optional<std::span<Shdr<E>>> get_shdr_tab(std::span<u8> file);
 template <typename E>
-std::optional<std::pair<std::span<Sym<E>>, std::span<Sym<E>>>>
-get_symbols_symtab_or_dynsym(u8* mem, elf::Shdr<E>& shdr) {
-  if (shdr.sh_entsize != sizeof(elf::Sym<E>)) {
-    return {};
-  }
-
-  auto symbols = std::span(reinterpret_cast<elf::Sym<E>*>(mem + shdr.sh_offset),
-                           shdr.sh_size / shdr.sh_entsize);
-  auto result = std::pair(symbols.subspan(0, shdr.sh_info - 1),
-                          symbols.subspan(shdr.sh_info));
-  return result;
-}
-
+std::optional<std::pair<std::span<Sym<E>>, size_t>>
+get_symtab(std::span<u8> file);
+template <typename E>
+char* get_strtab(std::span<u8> file);
+template <typename E>
+char* get_shstrtab(std::span<u8> file);
+template <typename E>
+std::span<Rela<E>> get_rela_tab(std::span<u8> file, Shdr<E>& shdr);
 } // namespace weld::elf

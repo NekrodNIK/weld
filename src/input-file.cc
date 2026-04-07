@@ -1,35 +1,31 @@
 #include "elf.h"
 #include "src/arch.h"
+#include "src/errors.h"
 #include "weld.h"
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <iterator>
 #include <memory>
-#include <print>
-#include <ranges>
+#include <ostream>
 #include <span>
-#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace weld {
-
 template <typename E>
-InputFile<E>::InputFile(MappedFile&& mapped)
-    : mapped_(std::forward<MappedFile>(mapped)) {}
+InputFile<E>::InputFile(MappedFile&& mapped) : mapped_(std::move(mapped)) {}
 
 template <typename E>
 std::unique_ptr<InputFile<E>> InputFile<E>::parse(MappedFile&& mapped) {
   if (!elf::is_elf(mapped.data())) {
-    Fatal() << mapped << "file is not elf";
+    Fatal().println("[{}] file is not elf", mapped);
   }
 
   auto file_arch = elf::get_arch(mapped.data());
-  if (file_arch == arch::Enum::unsupported) {
-    Fatal() << mapped << " architecture is not supported";
-  } else if (file_arch != arch::get_enum<E>()) {
-    Fatal() << mapped << " the architecture " << file_arch << " expected but ",
-        arch::get_enum<E>();
+  if (file_arch != arch::get_enum<E>()) {
+    Fatal().println("[{}] the architecture {} expected but {}", mapped,
+                    file_arch, arch::get_enum<E>());
   }
 
   auto type = reinterpret_cast<elf::Ehdr<E>*>(mapped.raw())->e_type;
@@ -39,74 +35,130 @@ std::unique_ptr<InputFile<E>> InputFile<E>::parse(MappedFile&& mapped) {
   case elf::ET_DYN:
     return std::make_unique<SharedObjectFile<E>>(std::move(mapped));
   case elf::ET_EXEC:
-    Fatal() << mapped << " is executable";
+    Fatal().println("[{}] is executable", mapped);
   default:
-    Fatal() << mapped << " unknown subtype of elf";
+    Fatal().println("[{}] unknown subtype of elf", mapped);
   }
 }
 
 template <typename E>
 ObjectFile<E>::ObjectFile(MappedFile&& mapped)
     : InputFile<E>(std::move(mapped)) {
-  auto ehdr = reinterpret_cast<elf::Ehdr<E>*>(this->mapped_.raw());
-
-  if (auto result = elf::get_shdr_table<E>(this->mapped_.data())) {
-    elf_shdr_tab_ = result.value();
+  if (auto result = elf::get_shdr_tab<E>(this->mapped_.data())) {
+    shdr_tab_ = result.value();
   } else {
-    Fatal() << this->mapped_ << " invalid elf";
+    Fatal().println("cannot read section headers: {}", this->mapped_);
   }
 
-  auto symtab_hdr = elf::find_shdr<E>(elf_shdr_tab_, elf::SHT_SYMTAB);
-  if (symtab_hdr) {
-    auto strtab_hdr = &elf_shdr_tab_[symtab_hdr->sh_link];
-    elf_strtab_ = std::string_view(
-        reinterpret_cast<char*>(this->mapped_.raw() + strtab_hdr->sh_offset),
-        strtab_hdr->sh_size);
+  if (auto result = elf::get_symtab<E>(this->mapped_.data())) {
+    auto [symtab, first_non_local] = result.value();
+    local_symtab_ = symtab.subspan(0, first_non_local);
+    non_local_symtab_ = symtab.subspan(first_non_local);
   } else {
-    static const char empty = '\0';
-    elf_strtab_ = std::string_view(&empty, 0);
+    Fatal().println("cannot read .symtab: {}", this->mapped_);
   }
-  auto shstrtab_hdr = &elf_shdr_tab_[ehdr->e_shstrndx];
-  elf_shstrtab_ = std::string_view(
-      reinterpret_cast<char*>(this->mapped_.raw() + shstrtab_hdr->sh_offset),
-      shstrtab_hdr->sh_size);
-  input_sections_ = std::vector<InputSection<E>>();
 
-  for (auto& shdr : elf_shdr_tab_) {
-    InputSection<E> sec;
-    sec.data =
-        std::span(reinterpret_cast<u8*>(this->mapped_.raw() + shdr.sh_offset),
-                  shdr.sh_size);
-    sec.elf_hdr = &shdr;
+  if (auto ptr = elf::get_strtab<E>(this->mapped_.data())) {
+    strtab_ = ptr;
+  } else {
+    Fatal().println("cannot read .strtab: {}", this->mapped_);
+  }
 
-    if (shdr.sh_type == elf::SHT_RELA) {
-      auto relas = std::span(
-          reinterpret_cast<elf::Rela<E>*>(this->mapped_.raw() + shdr.sh_offset),
-          shdr.sh_size / sizeof(elf::Rela<E>));
-      for (elf::Rela<E> rela : relas) {
-        auto symbol_name =
-            elf_strtab_
-                .substr(reinterpret_cast<elf::Sym<E>*>(
-                            this->mapped_.raw() +
-                            symtab_hdr->sh_offset)[rela.r_info >> 32]
-                            .st_name)
-                .data(); // FIXME
-        sec.relocations.push_back(
-            Relocation<E>{.elf_rela = rela, .symbol_name = symbol_name});
-      }
+  if (auto ptr = elf::get_shstrtab<E>(this->mapped_.data())) {
+    shstrtab_ = ptr;
+  } else {
+    Fatal().println("cannot read .shstrtab: {}", this->mapped_);
+  }
+
+  for (auto& shdr : shdr_tab_) {
+    char* name;
+
+    if (shdr.sh_type == elf::SHT_PROGBITS) {
+      name = shstrtab_ + shdr.sh_name;
+    } else if (shdr.sh_type == elf::SHT_RELA) {
+      name = shstrtab_ + shdr_tab_[shdr.sh_info].sh_name;
+    } else {
       continue;
     }
-    input_sections_.push_back(sec);
-  }
 
-  if (symtab_hdr) {
-    if (auto result = elf::get_symbols_symtab_or_dynsym<E>(this->mapped_.raw(),
-                                                           *symtab_hdr)) {
-      auto [local, global] = result.value();
-      elf_local_symbols_ = local;
-      elf_global_symbols_ = global;
+    if (!sections_.contains(name)) {
+      sections_[name] = {.name = name};
+    }
+
+    InputSection<E>& section = sections_[name];
+    if (shdr.sh_type == elf::SHT_PROGBITS) {
+      section.data =
+          std::span<u8>(this->mapped_.raw() + shdr.sh_offset, shdr.sh_size);
+      section.align = shdr.sh_addralign;
+    } else if (shdr.sh_type == elf::SHT_RELA) {
+      section.rela_tab = elf::get_rela_tab(this->mapped_.data(), shdr);
     } else {
-      Fatal() << std::format("[{}] invalid .symtab section", this->filename());
+      continue;
+    }
+  }
+}
+
+template <typename E>
+void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
+  for (elf::Sym<E>& elf_struct : non_local_symtab_) {
+    auto name = strtab_ + elf_struct.st_name;
+
+    if (elf_struct.st_shndx >= shdr_tab_.size()) {
+      Warn().println("Invalid section index: {}: {}", *this, name);
+      continue;
+    }
+    auto input_section =
+        elf_struct.st_shndx != elf::SHN_UNDEF
+            ? &sections_[shstrtab_ + shdr_tab_[elf_struct.st_shndx].sh_name]
+            : nullptr;
+    auto new_symbol =
+        Symbol<E>{.name = name,
+                  .input_section = input_section,
+                  .output_section = nullptr,
+                  .is_weak = (elf_struct.st_info & elf::STB_WEAK) != 0,
+                  .addr = elf_struct.st_value};
+
+    if (!ctx.symbol_map.contains(name) || !ctx.symbol_map[name].is_defined()) {
+      ctx.symbol_map[name] = new_symbol;
+      continue;
+    }
+
+    Symbol<E>& symbol = ctx.symbol_map[name];
+    if (symbol.is_weak && !new_symbol.is_weak) {
+      symbol = new_symbol;
+    } else if (!symbol.is_weak && !new_symbol.is_weak) {
+      Fatal().println("duplicate symbol: {}: {}", *this, name);
+    }
+  }
+}
+
+template <typename E>
+void ObjectFile<E>::merge_sections(Context<E>& ctx) {
+  for (auto& [name, input] : sections_) {
+    if (!ctx.merged_sections.contains(name)) {
+      ctx.merged_sections[name] = MergedSection<E>{};
+    }
+
+    MergedSection<E>& merged = ctx.merged_sections[name];
+
+    input.offset = merged.data.size();
+    merged.data.insert(merged.data.end(), input.data.begin(), input.data.end());
+
+    for (elf::Rela<E> rela : input.rela_tab) {
+      auto ind = rela.r_sym();
+      auto& symtab =
+          ind < local_symtab_.size() ? local_symtab_ : non_local_symtab_;
+      auto symbol_name = strtab_ + symtab[ind].st_name;
+
+      rela.r_offset += input.offset;
+      merged.relocations.push_back({
+          .rela = rela,
+          .symbol_name = symbol_name,
+      });
+    }
+
+    if (input.align > merged.align) {
+      merged.align = input.align;
     }
   }
 }
@@ -114,84 +166,18 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
 template <typename E>
 SharedObjectFile<E>::SharedObjectFile(MappedFile&& mapped)
     : InputFile<E>(std::move(mapped)) {
-  std::span<elf::Shdr<E>> shdr_tab;
-
-  if (auto result = elf::get_shdr_table<E>(this->mapped_.data())) {
-    shdr_tab = result.value();
-  } else {
-    Fatal() << this->mapped_ << " invalid elf";
-  }
-
-  auto dynsym_hdr = elf::find_shdr<E>(shdr_tab, elf::SHT_DYNSYM);
-
-  if (dynsym_hdr) {
-    if (auto result = elf::get_symbols_symtab_or_dynsym<E>(this->mapped_.raw(),
-                                                           *dynsym_hdr)) {
-      auto [local, global] = result.value();
-      elf_local_symbols_ = local;
-      elf_global_symbols_ = global;
-    } else {
-      Fatal() << std::format("[{}] invalid .dynsym section", this->filename());
-    }
-  }
+  Fatal().println("unimplemented yet");
 }
 
 template <typename E>
-void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
-  for (elf::Sym<E>& elf_sym : elf_global_symbols_) {
-    auto name = elf_strtab_.substr(elf_sym.st_name).data();
-    
-    if (elf_sym.st_shndx == elf::SHN_UNDEF) {
-      if (!ctx.symbol_map.contains(name)) {
-        ctx.symbol_map[name] = Symbol<E>{.esym = &elf_sym, .section = nullptr, .input_section = nullptr, .name = name};
-      }
-      continue;
-    }
-    
-    if (elf_sym.st_shndx >= elf_shdr_tab_.size()) continue;
-    
-    auto section_name = elf_shstrtab_.substr(elf_shdr_tab_[elf_sym.st_shndx].sh_name).data();
-    auto& merged = ctx.merged_sections[section_name];
-    auto& input_sec = input_sections_[elf_sym.st_shndx];
-    
-    auto sym = Symbol<E>{.esym = &elf_sym, .section = &merged, .input_section = &input_sec, .name = name};
-    
-    auto it = ctx.symbol_map.find(name);
-    if (it == ctx.symbol_map.end()) {
-      ctx.symbol_map[name] = sym;
-    } else if (it->second.esym->st_shndx == elf::SHN_UNDEF) {
-      it->second = sym;
-    }
-  }
+void SharedObjectFile<E>::resolve_symbols(Context<E>& ctx) {
+  Fatal().println("unimplemented yet");
 }
 
 template <typename E>
-void ObjectFile<E>::merge_sections(Context<E>& ctx) {
-  for (InputSection<E>& input_section : input_sections_) {
-    auto name = elf_shstrtab_.substr(input_section.elf_hdr->sh_name).data();
-    auto& merged = ctx.merged_sections[name];
-    
-    input_section.offset = merged.data.size();
-    
-    merged.data.insert(merged.data.end(), input_section.data.begin(), input_section.data.end());
-    
-    for (auto& rel : input_section.relocations) {
-      elf::Rela<E> new_rel = rel.elf_rela;
-      new_rel.r_offset += input_section.offset;
-      merged.relocations.push_back(Relocation<E>{.elf_rela = new_rel, .symbol_name = rel.symbol_name});
-    }
-    
-    if (input_section.elf_hdr->sh_addralign > merged.alignment) {
-      merged.alignment = input_section.elf_hdr->sh_addralign;
-    }
-  }
+void SharedObjectFile<E>::merge_sections(Context<E>& ctx) {
+  Fatal().println("unimplemented yet");
 }
-
-template <typename E>
-void SharedObjectFile<E>::resolve_symbols(Context<E>& ctx) {}
-
-template <typename E>
-void SharedObjectFile<E>::merge_sections(Context<E>& ctx) {}
 
 template <typename E>
 std::ostream& operator<<(std::ostream& out, const InputFile<E>& file) {

@@ -1,5 +1,7 @@
 #pragma once
 #include "ints.h"
+#include "src/errors.h"
+#include <format>
 #include <ostream>
 #include <type_traits>
 
@@ -32,3 +34,6 @@ Enum get_enum() {
 
 std::ostream& operator<<(std::ostream& out, Enum arch);
 } // namespace weld::arch
+template <>
+struct std::formatter<weld::arch::Enum>
+    : weld::ostream_formatter<weld::arch::Enum> {};
