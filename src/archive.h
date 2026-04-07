@@ -1,7 +1,5 @@
-#include "src/elf.h"
 #include "weld.h"
 #include <ar.h>
-#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -11,13 +9,7 @@
 #include <unistd.h>
 #include <vector>
 
-namespace weld::archive {
-
-bool is_ar(std::span<const u8> mem) {
-  return mem.size() >= SARMAG && std::memcmp(mem.data(), ARMAG, SARMAG) == 0;
-}
-
-bool is_ar(const std::string& filename) {
+bool isArFile(const std::string& filename) {
   std::ifstream reader(filename, std::ios::binary);
   if (!reader) {
     return false;
@@ -80,7 +72,7 @@ struct Archive {
 class ArReader {
 public:
   static Archive read(const std::string& filename) {
-    if (!is_ar(filename)) {
+    if (!isArFile(filename)) {
       throw std::ios_base::failure("Couldn't open file: " + filename);
     }
     std::vector<ArchiveMember> members;
@@ -132,11 +124,6 @@ public:
     return Archive{members};
   }
 
-  static bool should_skip_archive_member(const std::string& name) {
-    return name == "/" || name == "//" || name == "__.SYMDEF" ||
-           name == "__.SYMDEF SORTED" || name.empty();
-  }
-
   static std::vector<std::pair<std::string, weld::MappedFile>>
   extractMembers(const weld::MappedFile& archive) {
     std::vector<std::pair<std::string, weld::MappedFile>> members;
@@ -168,7 +155,7 @@ public:
       std::string name(nameChar);
       name.erase(name.find_last_not_of(' ') + 1);
 
-      if (should_skip_archive_member(name)) {
+      if (name == "/" || name == "//") {
         offset += sizeof(FileHeader) + size;
         if (size % 2 != 0) {
           offset++;
@@ -179,13 +166,6 @@ public:
       if (offset + sizeof(FileHeader) + size <= archiveSize) {
         weld::MappedFile slice =
             archive.slice(offset + sizeof(FileHeader), size);
-        if (!elf::is_elf(slice.data())) {
-          offset += sizeof(FileHeader) + size;
-          if (size % 2 != 0) {
-            offset++;
-          }
-          continue;
-        }
         members.emplace_back(std::move(name), std::move(slice));
       } else {
         break;
@@ -274,4 +254,3 @@ public:
     }
   }
 };
-} // namespace weld::archive

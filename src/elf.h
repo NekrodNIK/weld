@@ -63,10 +63,11 @@ enum : u32 {
   SHN_COMMON = 0xFFF2,
 };
 
-enum : u32 {
+enum : u8 {
   STB_WEAK = 2,
   STB_LOCAL = 1,
   STB_GLOBAL = 2,
+  STB_GNU_UNIQUE = 12,
 };
 
 enum : u32 {
@@ -164,6 +165,7 @@ struct Sym {
   unsigned char st_info;
   unsigned char st_other;
   u16 st_shndx;
+  u8 st_bind() const { return st_info >> 4; }
 };
 template <typename E>
   requires(E::is_64)
@@ -174,6 +176,7 @@ struct Sym<E> {
   u16 st_shndx;
   u64 st_value;
   u64 st_size;
+  u8 st_bind() const { return st_info >> 4; }
 };
 template <typename E>
 struct Dyn {

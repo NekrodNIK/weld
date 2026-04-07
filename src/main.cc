@@ -1,4 +1,3 @@
-#include "archive.h"
 #include "cli_parser.h"
 #include "elf.h"
 #include "src/arch.h"
@@ -7,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "archive.h"
 namespace weld {
 
 template <typename E>
@@ -15,8 +15,8 @@ process_input(std::vector<MappedFile>& mapped_files) {
   std::vector<std::unique_ptr<weld::InputFile<E>>> inputs;
 
   for (auto& mapped : mapped_files) {
-    if (archive::is_ar(mapped.data())) {
-      auto members = archive::ArReader::extractMembers(mapped);
+    if (::isArFile(std::string{mapped.filename()})) {
+      auto members = ArReader::extractMembers(mapped);
       Warn() << members.size() << '\n';
       for (auto& [name, memberFile] : members) {
         auto input = weld::InputFile<E>::parse(std::move(memberFile));

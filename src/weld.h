@@ -103,7 +103,7 @@ public:
   std::string name;
   InputSection<E>* input_section;
   OutputSection<E>* output_section;
-  bool is_weak : 1;
+  bool is_weak;
   size_t addr;
   bool is_defined() { return input_section; }
 };
@@ -145,9 +145,11 @@ public:
       merged_sections;
   std::unordered_map<std::string, OutputSection<E>, string_hash>
       output_sections;
+  std::vector<Symbol<E>> local_symbols;
 };
 template <typename T, typename V>
 auto align_addr(const T& addr, const V& align) {
+  if (align <= 1) return addr;
   return (addr + align - 1) & ~(align - 1);
 }
 } // namespace weld

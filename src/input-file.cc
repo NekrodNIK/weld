@@ -2,10 +2,8 @@
 #include "src/arch.h"
 #include "src/errors.h"
 #include "weld.h"
-#include <algorithm>
 #include <cassert>
 #include <cstring>
-#include <iterator>
 #include <memory>
 #include <ostream>
 #include <span>
@@ -55,19 +53,19 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
     local_symtab_ = symtab.subspan(0, first_non_local);
     non_local_symtab_ = symtab.subspan(first_non_local);
   } else {
-    Fatal().println("cannot read .symtab: {}", this->mapped_);
+    Warn().println("cannot read .symtab: {}", this->mapped_);
   }
 
   if (auto ptr = elf::get_strtab<E>(this->mapped_.data())) {
     strtab_ = ptr;
   } else {
-    Fatal().println("cannot read .strtab: {}", this->mapped_);
+    Warn().println("cannot read .strtab: {}", this->mapped_);
   }
 
   if (auto ptr = elf::get_shstrtab<E>(this->mapped_.data())) {
     shstrtab_ = ptr;
   } else {
-    Fatal().println("cannot read .shstrtab: {}", this->mapped_);
+    Warn().println("cannot read .shstrtab: {}", this->mapped_);
   }
 
   for (auto& shdr : shdr_tab_) {
@@ -86,7 +84,7 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
     }
 
     InputSection<E>& section = sections_[name];
-    if (shdr.sh_type == elf::SHT_PROGBITS) {
+    if (shdr.sh_type == elf::SHT_PROGBITS || shdr.sh_type == elf::SHT_NOBITS) {
       section.data =
           std::span<u8>(this->mapped_.raw() + shdr.sh_offset, shdr.sh_size);
       section.align = shdr.sh_addralign;
@@ -115,20 +113,45 @@ void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
         Symbol<E>{.name = name,
                   .input_section = input_section,
                   .output_section = nullptr,
-                  .is_weak = (elf_struct.st_info & elf::STB_WEAK) != 0,
+                  .is_weak = (elf_struct.st_bind() == elf::STB_WEAK ||
+                              elf_struct.st_bind() == elf::STB_GNU_UNIQUE),
                   .addr = elf_struct.st_value};
-
     if (!ctx.symbol_map.contains(name) || !ctx.symbol_map[name].is_defined()) {
       ctx.symbol_map[name] = new_symbol;
+      continue;
+    }
+    if (!new_symbol.is_defined()) {
       continue;
     }
 
     Symbol<E>& symbol = ctx.symbol_map[name];
     if (symbol.is_weak && !new_symbol.is_weak) {
       symbol = new_symbol;
+    } else if (!symbol.is_weak && new_symbol.is_weak) {
+      continue;
     } else if (!symbol.is_weak && !new_symbol.is_weak) {
       Fatal().println("duplicate symbol: {}: {}", *this, name);
     }
+  }
+
+  for (elf::Sym<E>& elf_struct : local_symtab_) {
+    auto name = strtab_ + elf_struct.st_name;
+    InputSection<E>* input_section;
+    if (elf_struct.st_shndx >= shdr_tab_.size()) {
+      input_section = &sections_[".text"]; // FIXME
+    } else {
+      input_section =
+          elf_struct.st_shndx != elf::SHN_UNDEF
+              ? &sections_[shstrtab_ + shdr_tab_[elf_struct.st_shndx].sh_name]
+              : nullptr;
+    }
+    ctx.local_symbols.push_back(
+        Symbol<E>{.name = name,
+                  .input_section = input_section,
+                  .output_section = nullptr,
+                  .is_weak = (elf_struct.st_bind() == elf::STB_WEAK ||
+                              elf_struct.st_bind() == elf::STB_GNU_UNIQUE),
+                  .addr = elf_struct.st_value});
   }
 }
 

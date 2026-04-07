@@ -11,7 +11,6 @@
 #include <vector>
 
 constexpr auto start_addr = 0x400000;
-constexpr auto start_offset = 0x1000;
 
 namespace weld {
 template <typename E>
@@ -28,13 +27,20 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
     cur_addr += merged.data.size();
   }
 
-  for (auto& [name, sym] : ctx.symbol_map) {
+  auto set_addr = [&ctx](auto& sym) {
     if (sym.is_defined()) {
       sym.output_section = &ctx.output_sections[sym.input_section->name];
       sym.addr += sym.output_section->addr + sym.input_section->offset;
       std::println("section: {}, symbol: {}, addr: {:X}",
-                   sym.input_section->name, name, sym.addr);
+                   sym.input_section->name, sym.name, sym.addr);
     }
+  };
+  
+  for (auto& [_, sym] : ctx.symbol_map) {
+    set_addr(sym);
+  }
+  for (auto& sym : ctx.local_symbols) {
+    set_addr(sym);
   }
 
   for (auto& [name, sec] : ctx.merged_sections) {
@@ -45,16 +51,26 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
 
       constexpr auto R_X86_64_64 = 1;
       constexpr auto R_X86_64_PC32 = 2;
+      constexpr auto R_X86_64_PLT32 = 4;
+      constexpr auto R_X86_64_32 = 10;
+      constexpr auto R_X86_64_32S = 11;
 
       auto type = rel.rela.r_info & 0xffffffffL; // FIXME
       if (type == R_X86_64_64) {
         auto result = S + A;
         auto size = 8;
         std::memcpy(sec.data.data() + rel.rela.r_offset, &result, size);
-      } else if (type == R_X86_64_PC32) {
+      } else if (type == R_X86_64_PC32 ||
+                 type == R_X86_64_PLT32) { // FIXME: plt stub
         auto result = S + A - P;
         auto size = 4;
         std::memcpy(sec.data.data() + rel.rela.r_offset, &result, size);
+      } else if (type == R_X86_64_32 || type == R_X86_64_32S) {
+        auto result = S + A;
+        auto size = 4;
+        std::memcpy(sec.data.data() + rel.rela.r_offset, &result, size);
+      } else {
+        Fatal().println("unknown relocation type: {}", type);
       }
     }
   }
@@ -62,13 +78,21 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
 
 template <typename E>
 void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
-  std::vector<u8> sections_data;
+  std::vector<u8> re_bytes;
+  std::vector<u8> rw_bytes;
+  size_t bss_size = 0;
+
   for (auto& [name, section] : ctx.output_sections) {
-    sections_data.insert(sections_data.end(), section.data.begin(),
-                         section.data.end());
+    if (name.find(".bss") == 0) {
+      bss_size += section.data.size();
+    } else if (name.find(".text") == 0 || name.find(".rodata") == 0) {
+      re_bytes.insert(re_bytes.end(), section.data.begin(), section.data.end());
+    } else {
+      rw_bytes.insert(rw_bytes.end(), section.data.begin(), section.data.end());
+    }
   }
 
-  elf::Ehdr<E> ehdr = {};
+  elf::Ehdr<E> ehdr;
   memcpy(ehdr.e_ident,
          "\x7f\x45\x4c\x46\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
          16);
@@ -78,27 +102,50 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   ehdr.e_entry = ctx.symbol_map["_start"].addr;
   ehdr.e_phoff = sizeof(ehdr);
   ehdr.e_phentsize = sizeof(elf::Phdr<E>);
-  ehdr.e_phnum = 1;
+  ehdr.e_phnum = 2;
   ehdr.e_shoff = 0;
   ehdr.e_shnum = 0;
   ehdr.e_shstrndx = 0;
 
-  elf::Phdr<E> phdr = {};
-  phdr.p_type = elf::PT_LOAD;
-  phdr.p_flags = elf::PF_R | elf::PF_X;
-  phdr.p_align = 0x1000;
+  size_t headers_size = sizeof(ehdr) + 2 * sizeof(elf::Phdr<E>);
+  size_t re_offset = align_addr(headers_size, 0x1000);
+  size_t re_vaddr = start_addr;
 
-  size_t text_offset = align_addr(sizeof(ehdr) + sizeof(phdr), 0x1000);
-  phdr.p_offset = text_offset;
-  phdr.p_vaddr = ctx.output_sections[".text"].addr;
-  phdr.p_paddr = ctx.output_sections[".text"].addr;
-  phdr.p_filesz = sections_data.size();
-  phdr.p_memsz = sections_data.size();
+  size_t rw_offset = align_addr(re_offset + re_bytes.size(), 0x1000);
+  size_t rw_vaddr = align_addr(re_vaddr + re_bytes.size(), 0x1000);
 
-  std::vector<u8> buf(text_offset);
+  elf::Phdr<E> phdr_re;
+  phdr_re.p_type = elf::PT_LOAD;
+  phdr_re.p_flags = elf::PF_R | elf::PF_X;
+  phdr_re.p_align = 0x1000;
+  phdr_re.p_offset = re_offset;
+  phdr_re.p_vaddr = re_vaddr;
+  phdr_re.p_paddr = re_vaddr;
+  phdr_re.p_filesz = re_bytes.size();
+  phdr_re.p_memsz = re_bytes.size();
+
+  elf::Phdr<E> phdr_rw;
+  phdr_rw.p_type = elf::PT_LOAD;
+  phdr_rw.p_flags = elf::PF_R | elf::PF_W;
+  phdr_rw.p_align = 0x1000;
+  phdr_rw.p_offset = rw_offset;
+  phdr_rw.p_vaddr = rw_vaddr;
+  phdr_rw.p_paddr = rw_vaddr;
+  phdr_rw.p_filesz = rw_bytes.size();
+  phdr_rw.p_memsz = rw_bytes.size() + bss_size;
+
+  std::vector<u8> buf(rw_offset + rw_bytes.size());
+
   memcpy(buf.data(), &ehdr, sizeof(ehdr));
-  memcpy(buf.data() + sizeof(ehdr), &phdr, sizeof(phdr));
-  buf.insert(buf.end(), sections_data.begin(), sections_data.end());
+  memcpy(buf.data() + sizeof(ehdr), &phdr_re, sizeof(phdr_re));
+  memcpy(buf.data() + sizeof(ehdr) + sizeof(phdr_re), &phdr_rw,
+         sizeof(phdr_rw));
+  if (!re_bytes.empty()) {
+    memcpy(buf.data() + re_offset, re_bytes.data(), re_bytes.size());
+  }
+  if (!rw_bytes.empty()) {
+    memcpy(buf.data() + rw_offset, rw_bytes.data(), rw_bytes.size());
+  }
 
   std::ofstream out(path, std::ios::binary);
   out.write(reinterpret_cast<char*>(buf.data()), buf.size());
