@@ -49,6 +49,7 @@ enum : u32 {
 };
 
 enum : u32 {
+  STT_NOTYPE = 0,
   STT_OBJECT = 1,
   STT_FUNC = 2,
   STT_SECTION = 3,
@@ -77,9 +78,9 @@ enum : u32 {
 };
 
 enum : u8 {
+  STB_LOCAL = 0,
+  STB_GLOBAL = 1,
   STB_WEAK = 2,
-  STB_LOCAL = 1,
-  STB_GLOBAL = 2,
   STB_GNU_UNIQUE = 12,
 };
 

@@ -180,7 +180,7 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
     phdrs.push_back(phdr_data);
   }
 
-  std::vector<elf::Sym<E>> symtab;
+  std::vector<elf::Sym<E>> symtab{{}};
   std::vector<char> strtab{'\0'};
   std::vector<char> shstrtab{'\0'};
   std::vector<elf::Shdr<E>> shdr_tab(1);
@@ -188,21 +188,18 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   auto process_symbol = [&ctx, &symtab, &strtab](Symbol<E>& symbol) {
     elf::Sym<E> elf_struct = {};
 
-    auto type = elf::STT_FUNC;
+    int shndx = elf::SHN_ABS;
     if (symbol.input_section) {
       const std::string& sec_name = symbol.input_section->name;
-      if (sec_name.find(".data") == 0 || sec_name.find(".rodata") == 0 ||
-          sec_name.find(".bss") == 0) {
-        type = elf::STT_OBJECT;
-      }
+      shndx = ctx.output_sec_ind[sec_name] + 1;
     }
 
     elf_struct.st_name = strtab.size();
     elf_struct.st_info =
-        (symbol.is_weak ? elf::STB_WEAK : elf::STB_GLOBAL) << 4 | type;
+        (symbol.is_weak ? elf::STB_WEAK : elf::STB_GLOBAL) << 4 | elf::STT_OBJECT;
     elf_struct.st_other = 0;
     elf_struct.st_value = symbol.addr;
-    elf_struct.st_shndx = 1;
+    elf_struct.st_shndx = shndx;
     elf_struct.st_size = 0;
 
     symtab.push_back(elf_struct);
