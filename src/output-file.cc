@@ -20,10 +20,9 @@ template <typename E>
 // TODO: refactoring
 void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   size_t cur_addr = start_addr;
-  std::unordered_map<std::string, size_t> output_sec_ind;
 
-  auto generate_output_sec = [&ctx, &cur_addr, &output_sec_ind](
-                                 MergedSection<E> merged, std::string name) {
+  auto generate_output_sec = [&ctx, &cur_addr](MergedSection<E> merged,
+                                               std::string name) {
     cur_addr = align_addr(cur_addr, merged.align);
     ctx.output_sections.push_back({
         .name = name,
@@ -31,7 +30,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
         .addr = cur_addr,
         .relocations = std::move(merged.relocations),
     });
-    output_sec_ind[name] = ctx.output_sections.size() - 1;
+    ctx.output_sec_ind[name] = ctx.output_sections.size() - 1;
     cur_addr += ctx.output_sections.back().data.size();
   };
 
@@ -55,10 +54,10 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
     generate_output_sec(merged, name);
   }
 
-  auto set_addr = [&ctx, &output_sec_ind](auto& sym) {
+  auto set_addr = [&ctx](auto& sym) {
     if (sym.is_defined()) {
       sym.output_section =
-          &ctx.output_sections[output_sec_ind[sym.input_section->name]];
+          &ctx.output_sections[ctx.output_sec_ind[sym.input_section->name]];
       sym.addr += sym.output_section->addr + sym.input_section->offset;
       std::println("section: {}, symbol: {}, addr: {:X}",
                    sym.input_section->name, sym.name, sym.addr);
@@ -75,7 +74,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   for (auto& sec : ctx.output_sections) {
     for (Relocation<E>& rel : sec.relocations) {
       auto S = ctx.symbol_map[rel.symbol_name].addr;
-      auto P = ctx.output_sections[output_sec_ind[sec.name]].addr +
+      auto P = ctx.output_sections[ctx.output_sec_ind[sec.name]].addr +
                rel.rela.r_offset;
       auto A = rel.rela.r_addend;
 
@@ -186,14 +185,24 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   std::vector<char> shstrtab{'\0'};
   std::vector<elf::Shdr<E>> shdr_tab(1);
 
-  auto process_symbol = [&symtab, &strtab](Symbol<E>& symbol) {
+  auto process_symbol = [&ctx, &symtab, &strtab](Symbol<E>& symbol) {
     elf::Sym<E> elf_struct = {};
+
+    auto type = elf::STT_FUNC;
+    if (symbol.input_section) {
+      const std::string& sec_name = symbol.input_section->name;
+      if (sec_name.find(".data") == 0 || sec_name.find(".rodata") == 0 ||
+          sec_name.find(".bss") == 0) {
+        type = elf::STT_OBJECT;
+      }
+    }
+
     elf_struct.st_name = strtab.size();
     elf_struct.st_info =
-        (symbol.is_weak ? elf::STB_WEAK : elf::STB_GLOBAL) << 4 | elf::STT_FUNC;
+        (symbol.is_weak ? elf::STB_WEAK : elf::STB_GLOBAL) << 4 | type;
     elf_struct.st_other = 0;
-    elf_struct.st_shndx = 1;
     elf_struct.st_value = symbol.addr;
+    elf_struct.st_shndx = 1;
     elf_struct.st_size = 0;
 
     symtab.push_back(elf_struct);

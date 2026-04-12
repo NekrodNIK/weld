@@ -146,6 +146,7 @@ public:
   std::unordered_map<std::string, MergedSection<E>, string_hash>
       merged_sections;
   std::vector<OutputSection<E>> output_sections;
+  std::unordered_map<std::string, size_t> output_sec_ind;
   std::vector<Symbol<E>> local_symbols;
 };
 template <typename T, typename V>
