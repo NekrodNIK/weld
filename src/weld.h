@@ -96,6 +96,7 @@ public:
   std::string name;
   std::vector<u8> data;
   size_t addr;
+  std::vector<Relocation<E>> relocations;
 };
 
 template <typename E>

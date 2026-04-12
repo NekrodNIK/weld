@@ -7,6 +7,7 @@
 #include <memory>
 #include <ostream>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -176,7 +177,13 @@ void ObjectFile<E>::merge_sections(Context<E>& ctx) {
       auto& elf_struct = ind < local_symtab_.size()
                              ? local_symtab_[ind]
                              : non_local_symtab_[ind - local_symtab_.size()];
-      auto symbol_name = strtab_ + elf_struct.st_name;
+      std::string symbol_name;
+      if (elf_struct.st_type() == elf::STT_SECTION &&
+          elf_struct.st_shndx < shdr_tab_.size()) {
+        symbol_name = shstrtab_ + shdr_tab_[elf_struct.st_shndx].sh_name;
+      } else {
+        symbol_name = strtab_ + elf_struct.st_name;
+      }
 
       rela.r_offset += input.offset;
       merged.relocations.push_back({
