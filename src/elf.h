@@ -2,13 +2,13 @@
 // However, this is not currently a problem,
 // as only the i386 and x86_64 architectures are supported.
 #pragma once
+#include "arch.h"
 #include "ints.h"
-#include "src/arch.h"
 #include <cassert>
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <type_traits>
-#include <utility>
 
 namespace weld::elf {
 enum : u32 {
@@ -43,6 +43,20 @@ enum : u32 {
 };
 
 enum : u32 {
+  SHF_WRITE = 0x1,
+  SHF_ALLOC = 0x2,
+  SHF_EXECINSTR = 0x4,
+};
+
+enum : u32 {
+  STT_NOTYPE = 0,
+  STT_OBJECT = 1,
+  STT_FUNC = 2,
+  STT_SECTION = 3,
+  STT_FILE = 4,
+};
+
+enum : u32 {
   SHT_NULL = 0,
   SHT_PROGBITS = 1,
   SHT_SYMTAB = 2,
@@ -57,7 +71,33 @@ enum : u32 {
   SHT_DYNSYM = 11,
 };
 
-enum : u32 { EV_CURRENT = 1 };
+enum : u32 {
+  SHN_UNDEF = 0,
+  SHN_ABS = 0xFFF1,
+  SHN_COMMON = 0xFFF2,
+};
+
+enum : u8 {
+  STB_LOCAL = 0,
+  STB_GLOBAL = 1,
+  STB_WEAK = 2,
+  STB_GNU_UNIQUE = 12,
+};
+
+enum : u32 {
+  EV_CURRENT = 1,
+};
+
+enum : u32 {
+  PT_NONE = 0,
+  PT_LOAD = 1,
+};
+
+enum : u32 {
+  PF_X = 0x1,
+  PF_W = 0x2,
+  PF_R = 0x4,
+};
 
 template <typename E>
 struct Ehdr;
@@ -139,6 +179,8 @@ struct Sym {
   unsigned char st_info;
   unsigned char st_other;
   u16 st_shndx;
+  u8 st_bind() const { return st_info >> 4; }
+  u8 st_type() const { return st_info & 0xf; }
 };
 template <typename E>
   requires(E::is_64)
@@ -149,6 +191,8 @@ struct Sym<E> {
   u16 st_shndx;
   u64 st_value;
   u64 st_size;
+  u8 st_bind() const { return st_info >> 4; }
+  u8 st_type() const { return st_info & 0xf; }
 };
 template <typename E>
 struct Dyn {
@@ -165,43 +209,28 @@ struct Rela {
   word<E> r_offset;
   word<E> r_info;
   sword<E> r_addend;
+  size_t r_sym() {
+    if constexpr (E::is_64) {
+      return r_info >> 32;
+    } else {
+      return r_info >> 8;
+    }
+  }
 };
 
-bool is_elf(std::span<u8> mem);
-arch::Enum get_arch(std::span<u8> mem);
-
+bool is_elf(std::span<const u8> file);
+arch::Enum get_arch(std::span<const u8> file);
 template <typename E>
-std::optional<std::span<Shdr<E>>> get_shdr_table(std::span<u8> mem) {
-  elf::Ehdr<E>* ehdr = reinterpret_cast<elf::Ehdr<E>*>(mem.data());
-  if (mem.size() < ehdr->e_shoff + ehdr->e_shnum * sizeof(Shdr<E>)) {
-    return {};
-  }
-  
-  // FIXME: It's probably best to check the alignment of the addresses in the file
-  // before converting types (you never know what address was written to the file).
-  return std::span(reinterpret_cast<Shdr<E>*>(mem.data() + ehdr->e_shoff),
-                   ehdr->e_shnum);
-}
-
+Ehdr<E>& get_ehdr(std::span<u8> file);
 template <typename E>
-Shdr<E>* find_shdr(std::span<elf::Shdr<E>> shdr_tab, u32 type) {
-  for (Shdr<E>& shdr : shdr_tab)
-    if (shdr.sh_type == type)
-      return &shdr;
-  return nullptr;
-}
-
+std::optional<std::span<Shdr<E>>> get_shdr_tab(std::span<u8> file);
 template <typename E>
-std::optional<std::pair<std::span<Sym<E>>, std::span<Sym<E>>>>
-get_symbols_symtab_or_dynsym(u8* mem, elf::Shdr<E>& shdr) {
-  if (shdr.sh_entsize != sizeof(elf::Sym<E>)) {
-    return {};
-  }
-
-  auto symbols = std::span(reinterpret_cast<elf::Sym<E>*>(mem + shdr.sh_offset),
-                           shdr.sh_size / shdr.sh_entsize);
-  auto result = std::pair(symbols.subspan(0, shdr.sh_info - 1),
-                          symbols.subspan(shdr.sh_info));
-  return result;
-}
+std::optional<std::pair<std::span<Sym<E>>, size_t>>
+get_symtab(std::span<u8> file);
+template <typename E>
+char* get_strtab(std::span<u8> file);
+template <typename E>
+char* get_shstrtab(std::span<u8> file);
+template <typename E>
+std::span<Rela<E>> get_rela_tab(std::span<u8> file, Shdr<E>& shdr);
 } // namespace weld::elf

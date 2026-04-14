@@ -1,107 +1,167 @@
 #pragma once
 #include "ints.h"
-#include "src/elf.h"
 #include <cassert>
+#include <cstddef>
 #include <filesystem>
-#include <format>
-#include <iostream>
-#include <memory>
-#include <optional>
-#include <ostream>
 #include <span>
+#include <string>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
+#include "mapped-file.h"
+#include "elf.h"
 
 namespace weld {
+template <typename E>
+class Context;
+template <typename E>
+class InputFile;
+template <typename E>
+class ObjectFile;
+template <typename E>
+class SharedObjectFile;
+template <typename E>
+class InputSection;
+template <typename E>
+class MergedSection;
+template <typename E>
+class OutputSection;
+template <typename E>
+class Symbol;
+template <typename E>
+class Relocation;
 
-class MappedFile {
-  u8* ptr_;
-  size_t size_;
-  std::string filename_;
+struct string_hash;
 
-  MappedFile() : ptr_(nullptr), size_(0) {};
-  bool map(const char* path);
-  void unmap();
-
-public:
-  MappedFile(const MappedFile&) = delete;
-  MappedFile& operator=(const MappedFile&) = delete;
-  MappedFile(MappedFile&& src);
-  MappedFile& operator=(MappedFile&& src);
-  ~MappedFile();
-  static std::optional<MappedFile> open(const std::filesystem::path& path);
-
-  std::string_view filename() const;
-  std::span<const u8> data() const;
-  const u8* raw() const;
-  size_t size() const;
-
-  std::span<u8> data();
-  u8* raw();
-};
-
+template <typename E>
 class InputFile {
 protected:
   MappedFile mapped_;
   InputFile(MappedFile&& mapped);
 
 public:
+  virtual ~InputFile() = default;
   static std::unique_ptr<InputFile> parse(MappedFile&& mapped);
   std::string_view filename() const { return mapped_.filename(); }
+  virtual void resolve_symbols(Context<E>& ctx) = 0;
+  virtual void merge_sections(Context<E>& ctx) = 0;
 };
 
 template <typename E>
-class ObjectFile : public InputFile {
-  std::span<elf::Sym<E>> elf_local_symbols_;
-  std::span<elf::Sym<E>> elf_global_symbols_;
+class ObjectFile : public InputFile<E> {
+  std::span<elf::Shdr<E>> shdr_tab_;
+  std::span<elf::Sym<E>> local_symtab_;
+  std::span<elf::Sym<E>> non_local_symtab_;
+  char* strtab_;
+  char* shstrtab_;
+  std::unordered_map<std::string, InputSection<E>, string_hash> sections_;
 
 public:
   ObjectFile(MappedFile&& mapped);
+  void resolve_symbols(Context<E>& ctx) override;
+  void merge_sections(Context<E>& ctx) override;
 };
 
 template <typename E>
-class SharedObjectFile : public InputFile {
-  std::span<elf::Sym<E>> elf_local_symbols_;
-  std::span<elf::Sym<E>> elf_global_symbols_;
-
+class SharedObjectFile : public InputFile<E> {
 public:
   SharedObjectFile(MappedFile&& mapped);
+  void resolve_symbols(Context<E>& ctx) override;
+  void merge_sections(Context<E>& ctx) override;
 };
 
-class Fatal {
-  std::ostream& out;
-
+template <typename E>
+class InputSection {
 public:
-  Fatal();
-  [[noreturn]] ~Fatal();
-  template <typename T>
-  Fatal operator<<(T&& val) {
-    out << std::forward<T>(val);
-    return *this;
-  };
+  std::string name;
+  std::span<u8> data;
+  std::span<elf::Rela<E>> rela_tab;
+  std::span<elf::Rel<E>> rel_tab; // TODO: implement it
+  size_t offset;
+  size_t align;
 };
 
-class Error {
-  std::ostream& out;
-
+template <typename E>
+class MergedSection {
 public:
-  Error();
-  template <typename T>
-  Error operator<<(T&& val) {
-    out << std::forward<T>(val);
-    return *this;
-  };
+  std::vector<u8> data;
+  std::vector<InputSection<E>*> input_sections;
+  std::vector<Relocation<E>> relocations;
+  size_t align;
 };
 
-class Warn {
-  std::ostream& out;
-
+template <typename E>
+class OutputSection {
 public:
-  Warn();
-  template <typename T>
-  Warn operator<<(T&& val) {
-    out << std::forward<T>(val);
-    return *this;
-  };
+  std::string name;
+  std::vector<u8> data;
+  size_t addr;
+  std::vector<Relocation<E>> relocations;
 };
 
+template <typename E>
+class Symbol {
+public:
+  std::string name;
+  InputSection<E>* input_section;
+  OutputSection<E>* output_section;
+  bool is_weak;
+  size_t addr;
+  bool is_defined() { return input_section; }
+};
+
+template <typename E>
+class Relocation {
+public:
+  elf::Rela<E> rela;
+  std::string symbol_name;
+};
+
+template <typename E>
+class OutputFile {
+public:
+  void resolve_relocations(Context<E>& ctx);
+  void write(Context<E>& ctx, const std::filesystem::path& file);
+};
+
+// NOTE: This for heterogeneous lookup
+// https://en.cppreference.com/w/cpp/utility/functional.html#Transparent_function_objects
+struct string_hash {
+  using is_transparent = void;
+  size_t operator()(const char* txt) const {
+    return std::hash<std::string_view>{}(txt);
+  }
+  size_t operator()(std::string_view txt) const {
+    return std::hash<std::string_view>{}(txt);
+  }
+  size_t operator()(const std::string& txt) const {
+    return std::hash<std::string>{}(txt);
+  }
+};
+
+template <typename E>
+class Context {
+public:
+  std::unordered_map<std::string, Symbol<E>, string_hash> symbol_map;
+  std::unordered_map<std::string, MergedSection<E>, string_hash>
+      merged_sections;
+  std::vector<OutputSection<E>> output_sections;
+  std::unordered_map<std::string, size_t> output_sec_ind;
+  std::vector<Symbol<E>> local_symbols;
+};
+template <typename T, typename V>
+auto align_addr(const T& addr, const V& align) {
+  if (align <= 1) return addr;
+  return (addr + align - 1) & ~(align - 1);
+}
 } // namespace weld
+
+template <typename E>
+struct std::formatter<weld::InputFile<E>>
+    : public weld::ostream_formatter<weld::InputFile<E>> {};
+template <typename E>
+struct std::formatter<weld::ObjectFile<E>>
+    : public weld::ostream_formatter<weld::ObjectFile<E>> {};
+template <typename E>
+struct std::formatter<weld::SharedObjectFile<E>>
+    : public weld::ostream_formatter<weld::SharedObjectFile<E>> {};

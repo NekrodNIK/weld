@@ -1,4 +1,4 @@
-#include "weld.h"
+#include "mapped-file.h"
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -6,7 +6,7 @@
 #include <unistd.h>
 
 namespace weld {
-bool MappedFile::map(const char* path) {
+bool MappedFile::map_(const char* path) {
   int fd = ::open(path, O_RDONLY);
 
   bool result = [fd, this]() {
@@ -31,7 +31,7 @@ bool MappedFile::map(const char* path) {
   return result;
 }
 
-void MappedFile::unmap() {
+void MappedFile::unmap_() {
   if (size_ == 0 || !ptr_)
     return;
   munmap(ptr_, size_);

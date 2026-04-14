@@ -7,11 +7,13 @@ project(
 )
 
 srcs = [
+  'src/cli_parser.cc',
   'src/main.cc',
-  'src/mapped-file.cc',
   'src/input-file.cc',
+  'src/mapped-file.cc',
   'src/elf.cc',
-  'src/error.cc',
+  'src/arch.cc',
+  'src/output-file.cc',
 ]
 
 if target_machine.system() == 'windows'
@@ -20,10 +22,13 @@ else
   srcs += ['src/mapped-file-unix.cc']
 endif
 
+incdir = include_directories('include')
 exe = executable(
   'weld',
   srcs,
   install : true,
+  include_directories: incdir,
 )
+
 
 subdir('tests')
