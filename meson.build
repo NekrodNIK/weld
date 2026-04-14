@@ -7,11 +7,11 @@ project(
 )
 
 srcs = [
+  'src/cli_parser.cc',
   'src/main.cc',
   'src/input-file.cc',
   'src/mapped-file.cc',
   'src/elf.cc',
-  'src/cli_parser.cc',
   'src/arch.cc',
   'src/output-file.cc',
 ]
