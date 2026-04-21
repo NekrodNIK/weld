@@ -1,4 +1,4 @@
-#include "cli_parser.h"
+#include "cli.h"
 #include "elf.h"
 #include "src/arch.h"
 #include "weld.h"
@@ -42,7 +42,7 @@ process_input(std::vector<MappedFile>& mapped_files) {
 }
 
 template <typename E>
-void main(std::vector<MappedFile>&& mapped_files, LinkerFlags& flags) {
+void main(std::vector<MappedFile>&& mapped_files, LinkerArgs& flags) {
   auto input_files = process_input<E>(mapped_files);
   auto output_file = weld::OutputFile<E>();
   Context<E> ctx;
@@ -53,7 +53,7 @@ void main(std::vector<MappedFile>&& mapped_files, LinkerFlags& flags) {
   }
 
   output_file.resolve_relocations(ctx);
-  output_file.write(ctx, flags.output_file);
+  output_file.write(ctx, flags.output_path);
 }
 
 } // namespace weld
