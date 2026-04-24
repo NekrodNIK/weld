@@ -3,6 +3,7 @@
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <ctime>
 #include <functional>
 #include <future>
@@ -31,6 +32,7 @@ private:
 	std::vector<std::thread> threads;
 	std::atomic<bool> running;
 	std::atomic<size_t> current_worker;
+	std::atomic<size_t> active_tasks = 0;
 
 	void worker(size_t thread_index) {
 		assert(thread_index < threads.size());
@@ -77,7 +79,11 @@ public:
 		auto task = std::make_shared<std::packaged_task<ret_type()>>(std::bind(std::forward<Function>(func), 
 			std::forward<Args>(args)...));
 		std::future<ret_type> result = task->get_future();
-		std::function<void()> wrapper = [task]() -> void { (*task)(); };
+		active_tasks.fetch_add(1, std::memory_order_relaxed);
+		std::function<void()> wrapper = [task, this]() -> void {
+	 		(*task)(); 
+	 		active_tasks.fetch_sub(1, std::memory_order_release);
+		};
 		size_t index = current_worker.fetch_add(1, std::memory_order_relaxed) % queues.size();
 		{
 			std::lock_guard<std::mutex> lock(queues[index]->mutex);
@@ -103,7 +109,7 @@ public:
 	void submit_all(const Collection& tasks) {
 		std::vector<std::future<void>> futures;
 		futures.reserve(tasks.size());
-			for (const auto& task : tasks) {
+		for (const auto& task : tasks) {
 	        futures.push_back(submit(task));
 	    }
         for (auto& fut : futures) {
@@ -114,24 +120,10 @@ public:
 	void await_termination() {
 		running = false;
 		for (auto& q : queues) {
-			q->cv.notify_one();
+			q->cv.notify_all();
 		}
-		bool ready = false;
-		size_t time_to_sleep = 12;
-		size_t max_time = 1000;
-		while (!ready) {
-			ready = true;
-			for (auto& q : queues) {
-				{
-					std::lock_guard<std::mutex> lock(q->mutex);
-					if (!q->tasks.empty()) {
-						ready = false;
-						break;
-					}
-				}
-			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep));
-			time_to_sleep = std::min(time_to_sleep * 2, max_time);
+		while (active_tasks.load(std::memory_order_acquire) > 0) {
+			std::this_thread::yield();
 		}
 	}
 
