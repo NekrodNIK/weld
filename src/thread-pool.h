@@ -15,6 +15,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <concepts>
+#include <ranges>
 
 
 class ThreadPool {
@@ -85,6 +87,30 @@ public:
 		return result;
 	}
 
+	template<typename... Functions>
+	requires (std::invocable<Functions> && ...)
+	void submit_all(Functions&&... funcs) {
+		std::vector<std::future<void>> futures;
+		futures.reserve(sizeof...(funcs));
+		(futures.push_back(submit([func = std::forward<Functions>(funcs)]() mutable {func();})), ...);
+		for (auto& f : futures) {
+			f.get();
+		}
+	}
+
+	template<typename Collection>
+	requires std::invocable<typename Collection::value_type>
+	void submit_all(const Collection& tasks) {
+		std::vector<std::future<void>> futures;
+		futures.reserve(tasks.size());
+			for (const auto& task : tasks) {
+	        futures.push_back(submit(task));
+	    }
+        for (auto& fut : futures) {
+        	fut.get();
+    	}
+	}
+
 	void await_termination() {
 		running = false;
 		for (auto& q : queues) {
@@ -109,4 +135,53 @@ public:
 		}
 	}
 
+};
+
+struct Chain {
+private:
+	ThreadPool& pool;
+	std::vector<std::future<void>> futures;
+
+public:
+
+	Chain(ThreadPool& pool_) : pool(pool_) {}
+
+ 	template <typename C, typename F>
+    requires(std::ranges::range<C> && std::invocable<F, std::ranges::range_reference_t<C>>)
+    Chain& foreach(C& collection, F&& func) {
+    	for (auto& c : collection) {
+    		futures.push_back(pool.submit([&func, &c]() { func(c); }));
+    	}
+    	return *this;
+    }
+
+    template <typename C, typename F>
+    requires(std::ranges::range<C> && std::invocable<F, std::ranges::range_reference_t<C>>)
+    Chain& foreach(C&& collection, F&& func) {
+    	for (auto& c : collection) {
+    		futures.push_back(pool.submit([&func, &c]() { func(c); }));
+    	}
+    	return *this;
+    }
+
+    void wait() {
+    	for (auto& f : futures) {
+    		f.get();
+    	}
+    	futures.clear();
+    }
+};
+
+struct Tasks {
+	ThreadPool& pool;
+
+	Tasks(ThreadPool& pool_) : pool(pool_) {}
+
+	template <typename C, typename F>
+    requires(std::ranges::range<C> && std::invocable<F, std::ranges::range_reference_t<C>>)
+    Chain foreach(C& collection, F&& func) {
+    	Chain chain(pool);
+    	chain.foreach(collection, std::forward<F>(func));
+    	return chain;
+    }
 };
