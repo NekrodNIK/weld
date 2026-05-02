@@ -71,6 +71,17 @@ public:
   void merge_sections(Context<E>& ctx) override;
 };
 
+template<typename E>
+class ArchiveFile : public InputFile<E> {
+  std::vector<std::span<u8>> members;
+
+  public:
+    ArchiveFile(MappedFile&& mapped);
+    void resolve_symbols(Context<E>& ctx) override;
+    void merge_sections(Context<E>& ctx) override;
+    static bool is_archive(std::span<u8> mem);
+};
+
 template <typename E>
 class InputSection {
 public:

@@ -14,6 +14,7 @@ srcs = [
   'src/elf.cc',
   'src/arch.cc',
   'src/output-file.cc',
+  'src/archive.cc',
 ]
 
 if target_machine.system() == 'windows'

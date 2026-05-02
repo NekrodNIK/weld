@@ -6,7 +6,6 @@
 #include <memory>
 #include <vector>
 
-#include "archive.h"
 namespace weld {
 
 template <typename E>
@@ -15,19 +14,21 @@ process_input(std::vector<MappedFile>& mapped_files) {
   std::vector<std::unique_ptr<weld::InputFile<E>>> inputs;
 
   for (auto& mapped : mapped_files) {
-    if (::isArFile(std::string{mapped.filename()})) {
-      auto members = ArReader::extractMembers(mapped);
-      Warn() << members.size() << '\n';
-      for (auto& [name, memberFile] : members) {
-        auto input = weld::InputFile<E>::parse(std::move(memberFile));
-        if (input) {
-          inputs.push_back(std::move(input));
-        } else {
-          weld::Warn() << "Failed to parse archive member: " << name << " from "
-                       << mapped.filename() << '\n';
-        }
-      }
-    } else if (weld::elf::is_elf(mapped.data())) {
+    // if (::isArFile(std::string{mapped.filename()})) {
+    //   auto members = ArReader::extractMembers(mapped);
+    //   Warn() << members.size() << '\n';
+    //   for (auto& [name, memberFile] : members) {
+    //     auto input = weld::InputFile<E>::parse(std::move(memberFile));
+    //     if (input) {
+    //       inputs.push_back(std::move(input));
+    //     } else {
+    //       weld::Warn() << "Failed to parse archive member: " << name << "
+    //       from "
+    //                    << mapped.filename() << '\n';
+    //     }
+    //   }
+    // } else
+    if (weld::elf::is_elf(mapped.data())) {
       auto input = weld::InputFile<E>::parse(std::move(mapped));
       if (input) {
         inputs.push_back(std::move(input));

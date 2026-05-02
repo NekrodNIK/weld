@@ -17,6 +17,10 @@ InputFile<E>::InputFile(MappedFile&& mapped) : mapped_(std::move(mapped)) {}
 
 template <typename E>
 std::unique_ptr<InputFile<E>> InputFile<E>::parse(MappedFile&& mapped) {
+  if (ArchiveFile<E>::is_archive(mapped.data())) {
+    return std::make_unique<ArchiveFile<E>>(std::move(mapped));
+  }
+    
   if (!elf::is_elf(mapped.data())) {
     Fatal().println("[{}] file is not elf", mapped);
   }
