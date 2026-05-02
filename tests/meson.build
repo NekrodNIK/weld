@@ -1,4 +1,4 @@
-tests = []
+tests = ['hashmap-test.cc', 'thread-pool-test.cc']
 unix_tests = []
 
 if target_machine.system() == 'windows' 

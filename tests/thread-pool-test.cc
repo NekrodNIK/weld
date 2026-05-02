@@ -2,7 +2,7 @@
 #include <future>
 #include <gtest/gtest.h>
 #include <vector>
-#include "thread-pool.h"
+#include "../src/thread-pool.h"
 
 
 #define f(i) []() -> void {fib(i);}
@@ -128,9 +128,4 @@ TEST(ThreadPool, CmpTime) {
 	std::cout << "Parallel time = " << std::chrono::duration_cast<std::chrono::microseconds>(end2 - begin2).count() << "[µs]" << std::endl;
 	ASSERT_EQ(res1, res2);
 	#endif 
-}
-
-int main() {
-	testing::InitGoogleTest();
-	auto s = RUN_ALL_TESTS();
 }

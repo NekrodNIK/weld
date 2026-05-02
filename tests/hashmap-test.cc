@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
-#include "hashmap.h"
-#include "thread-pool.h"
+#include "../src/hashmap.h"
+#include "../src/thread-pool.h"
 #include <iostream>
 
-
-int fib(int x) {
+static int fib(int x) {
 	if (x <= 1) {
 		return x;
 	}
@@ -25,9 +24,4 @@ TEST(HashMap, Base) {
 		std::cout << map.at(i) << std::endl;
 	}
 	std::cout << "getted" << std::endl;
-}
-
-int main() {
-	testing::InitGoogleTest();
-	auto s = RUN_ALL_TESTS();
 }
