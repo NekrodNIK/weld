@@ -2,9 +2,7 @@
 
 #include <atomic>
 #include <functional>
-#include <memory>
 #include <stdexcept>
-#include <type_traits>
 #include <vector>
 
 class HashMapError : std::runtime_error {
@@ -213,14 +211,14 @@ public:
     return false;
   }
 
-  const V& operator[](const auto& key) const {
-    Node* node = find_node(key);
-    if constexpr (std::is_default_constructible<V>() && !node)
-      insert(key, V());
-    return node->value;
-  }
-  V& operator[](const auto& key) { return find_node(key)->value; }
-  bool contains(const auto& key) const { return find_node(key); }
+  // const V& operator[](const auto& key) const {
+  //   Node* node = find_node(key);
+  //   if constexpr (std::is_default_constructible<V>() && !node)
+  //     insert(key, V());
+  //   return node->value;
+  // }
+  // V& operator[](const auto& key) { return find_node(key)->value; }
+  // bool contains(const auto& key) const { return find_node(key); }
 
   bool remove(const auto& key) {
     size_t index = bucket_index(key);
