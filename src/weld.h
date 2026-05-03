@@ -1,5 +1,8 @@
 #pragma once
+#include "elf.h"
 #include "ints.h"
+#include "mapped-file.h"
+#include "src/hashmap.h"
 #include <cassert>
 #include <cstddef>
 #include <filesystem>
@@ -8,9 +11,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-#include "mapped-file.h"
-#include "elf.h"
-#include "hashmap.h"
 
 namespace weld {
 template <typename E>
@@ -69,6 +69,17 @@ public:
   SharedObjectFile(MappedFile&& mapped);
   void resolve_symbols(Context<E>& ctx) override;
   void merge_sections(Context<E>& ctx) override;
+};
+
+template <typename E>
+class ArchiveFile : public InputFile<E> {
+  std::vector<std::span<u8>> members;
+
+public:
+  ArchiveFile(MappedFile&& mapped);
+  void resolve_symbols(Context<E>& ctx) override;
+  void merge_sections(Context<E>& ctx) override;
+  static bool is_archive(std::span<u8> mem);
 };
 
 template <typename E>

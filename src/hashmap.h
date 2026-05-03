@@ -4,24 +4,21 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
-
 class HashMapError : std::runtime_error {
-	std::string message;
+  std::string message;
 
 public:
+  explicit HashMapError(std::string m) : std::runtime_error("") {
+    message = "Something occuried in hashmap: " + m;
+  }
 
-	explicit HashMapError(std::string m) : std::runtime_error("") {
-		message = "Something occuried in hashmap: " + m;
-	}
-
-	const char* what() const noexcept override {
-		return message.c_str();
-	}
+  const char* what() const noexcept override { return message.c_str(); }
 };
 
-template<typename K, typename V>
+template <typename K, typename V, typename Hash = std::hash<K>>
 class LockFreeHashMap {
 
 	struct Node {
@@ -30,29 +27,28 @@ class LockFreeHashMap {
         std::atomic<Node*> next;
         std::atomic<bool> deleted; 
 
-        Node(const K& k, const V& v) : key(k), value(v), next(nullptr), deleted(false) {}
-    };
+    Node(const K& k, const V& v)
+        : key(k), value(v), next(nullptr), deleted(false) {}
+  };
 
-    std::vector<std::atomic<Node*>> buckets;
-    size_t capacity;
-    std::atomic<size_t> entry_count{0};
-    std::hash<K> hasher;
+  std::vector<std::atomic<Node*>> buckets;
+  size_t capacity;
+  Hash hasher;
 
-    size_t bucket_index(const K& key) const {
-    	return hasher(key) % capacity;
+  size_t bucket_index(const auto& key) const { return hasher(key) % capacity; }
+
+  Node* find_node(const auto& key) const {
+    size_t index = bucket_index(key);
+    Node* current = buckets[index].load(std::memory_order_acquire);
+    while (current != nullptr) {
+      if (!current->deleted.load(std::memory_order_acquire) &&
+          current->key == key) {
+        return current;
+      }
+      current = current->next.load(std::memory_order_acquire);
     }
-
-    Node* find_node(const K& key) const {
-        size_t index = bucket_index(key);
-        Node* current = buckets[index].load(std::memory_order_acquire);
-        while (current != nullptr) {
-            if (!current->deleted.load(std::memory_order_acquire) && current->key == key) {
-                return current;
-            }
-            current = current->next.load(std::memory_order_acquire);
-        }
-        return nullptr;
-}
+    return nullptr;
+  }
 
 public:
 
@@ -160,92 +156,89 @@ public:
             bucket.store(nullptr, std::memory_order_relaxed);
         }
     }
+  }
 
-    ~LockFreeHashMap() {
-        for (auto& bucket : buckets) {
-            Node* current = bucket.load(std::memory_order_relaxed);
-            while (current != nullptr) {
-                Node* next = current->next.load(std::memory_order_relaxed);
-                delete current;
-                current = next;
-            }
-        }
+  ~LockFreeHashMap() {
+    for (auto& bucket : buckets) {
+      Node* current = bucket.load(std::memory_order_relaxed);
+      while (current != nullptr) {
+        Node* next = current->next.load(std::memory_order_relaxed);
+        delete current;
+        current = next;
+      }
     }
+  }
 
-    bool contains(const K& key) const {
-        return find_node(key) != nullptr;
+  bool insert(const auto& key, const V& value) {
+    size_t index = bucket_index(key);
+    Node* new_node = new Node(key, value);
+    while (true) {
+      Node* head = buckets[index].load(std::memory_order_acquire);
+      new_node->next.store(head, std::memory_order_relaxed);
+      if (buckets[index].compare_exchange_weak(head, new_node,
+                                               std::memory_order_release,
+                                               std::memory_order_acquire)) {
+        return true;
+      }
     }
+  }
 
-    bool insert(const K& key, const V& value) {
-        Node* existing = find_node(key);
-        if (existing) {
-            existing->value = value;
-            return false;
-        }
-        size_t index = bucket_index(key);
-        Node* new_node = new Node(key, value);
-        while (true) {
-            Node* head = buckets[index].load(std::memory_order_acquire);
-            new_node->next.store(head, std::memory_order_relaxed);
-            if (buckets[index].compare_exchange_weak(
-                    head, new_node,
-                    std::memory_order_release,
-                    std::memory_order_acquire)) {
-                entry_count.fetch_add(1, std::memory_order_release);
-                return true;
-            }
-        }
+  V& at(const auto& key) {
+    Node* node = find_node(key);
+    if (!node) {
+      throw HashMapError("No key in map");
     }
+    return node->value;
+  }
 
-    V& at(const K& key) {
-        Node* node = find_node(key);
-        if (!node) {
-            throw HashMapError("No key in map");
-        }
-        return node->value;
+  const V& at(const auto& key) const {
+    Node* node = find_node(key);
+    if (!node) {
+      throw HashMapError("No key in map");
     }
+    return node->value;
+  }
 
-    const V& at(const K& key) const {
-        Node* node = find_node(key);
-        if (!node) {
-            throw HashMapError("No key in map");
-        }
-        return node->value;
+  bool get(const auto& key, V& value) const {
+    size_t index = bucket_index(key);
+    Node* current = buckets[index].load(std::memory_order_acquire);
+    while (current != nullptr) {
+      if (!current->deleted.load(std::memory_order_acquire) &&
+          current->key == key) {
+        value = current->value;
+        return true;
+      }
+      current = current->next.load(std::memory_order_acquire);
     }
+    return false;
+  }
 
-    bool get(const K& key, V& value) const {
-        size_t index = bucket_index(key);
-        Node* current = buckets[index].load(std::memory_order_acquire);
-        while (current != nullptr) {
-            if (!current->deleted.load(std::memory_order_acquire) && current->key == key) {
-                value = current->value;
-                return true;
-            }
-            current = current->next.load(std::memory_order_acquire);
+  const V& operator[](const auto& key) const {
+    Node* node = find_node(key);
+    if constexpr (std::is_default_constructible<V>() && !node)
+      insert(key, V());
+    return node->value;
+  }
+  V& operator[](const auto& key) { return find_node(key)->value; }
+  bool contains(const auto& key) const { return find_node(key); }
+
+  bool remove(const auto& key) {
+    size_t index = bucket_index(key);
+    Node* current = buckets[index].load(std::memory_order_acquire);
+    while (current != nullptr) {
+      if (!current->deleted.load(std::memory_order_acquire) &&
+          current->key == key) {
+        bool expected = false;
+        if (current->deleted.compare_exchange_strong(
+                expected, true, std::memory_order_release,
+                std::memory_order_relaxed)) {
+          return true;
         }
-        return false;
+      }
+      current = current->next.load(std::memory_order_acquire);
     }
+    return false;
+  }
 
-    bool remove(const K& key) {
-        size_t index = bucket_index(key);
-        Node* current = buckets[index].load(std::memory_order_acquire);
-        while (current != nullptr) {
-            if (!current->deleted.load(std::memory_order_acquire) && current->key == key) {
-                bool expected = false;
-                if (current->deleted.compare_exchange_strong(
-                        expected, true,
-                        std::memory_order_release,
-                        std::memory_order_relaxed)) {
-                    entry_count.fetch_sub(1, std::memory_order_release);
-                    return true;
-                }
-            }
-            current = current->next.load(std::memory_order_acquire);
-        }
-        return false;
-    }
-
-    size_t size() const {
-        return entry_count.load(std::memory_order_acquire);
-    }	
+  size_t size() const { return capacity; }
 };
