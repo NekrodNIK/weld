@@ -2,7 +2,7 @@
 #include "elf.h"
 #include "ints.h"
 #include "mapped-file.h"
-#include "src/hashmap.h"
+#include "thread-pool.h"
 #include <cassert>
 #include <cstddef>
 #include <filesystem>
@@ -159,9 +159,14 @@ public:
   std::vector<OutputSection<E>> output_sections;
   LockFreeHashMap<std::string, size_t> output_sec_ind;
   std::vector<Symbol<E>> local_symbols;
+  
   bool is_relocatable = false;
-  size_t start_address = 0x400000;
+  size_t start_addr = 0x400000;
+  
+  ThreadPool thread_pool;
+  Tasks tasks;
 };
+
 template <typename T, typename V>
 auto align_addr(const T& addr, const V& align) {
   if (align <= 1) return addr;

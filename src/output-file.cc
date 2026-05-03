@@ -1,14 +1,12 @@
 #include "arch.h"
 #include "elf.h"
 #include "weld.h"
-#include "thread-pool.h"
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <fcntl.h> 
 #include <filesystem>
 #include <functional>
-#include <fstream>
 #include <print>
 #include <string>
 #include <sys/stat.h>
@@ -304,8 +302,6 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
     }
     close(fd);
 
-    ThreadPool* pool = new ThreadPool;
-
     std::vector<std::function<void()>> copy_tasks;
 
     copy_tasks.push_back([&]() {
@@ -348,9 +344,7 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
                     shstrtab.data(), shstrtab.size());
     });
 
-    pool->submit_all(copy_tasks);
-    delete pool;
-
+    ctx.thread_pool.submit_all(copy_tasks);
     msync(map, total_size, MS_SYNC);
     munmap(map, total_size);
     chmod(path.c_str(), 0755);

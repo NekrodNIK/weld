@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "elf.h"
 #include "src/arch.h"
+#include "src/thread-pool.h"
 #include "weld.h"
 #include <cassert>
 #include <memory>
@@ -46,7 +47,10 @@ template <typename E>
 void main(std::vector<MappedFile>&& mapped_files, LinkerArgs& flags) {
   auto input_files = process_input<E>(mapped_files);
   auto output_file = weld::OutputFile<E>();
-  Context<E> ctx;
+
+  Context<E> ctx{.thread_pool =
+                     ThreadPool(12), // FIXME: detect max threads size
+                 .tasks = Tasks(ctx.thread_pool)};
 
   for (auto& file : input_files) {
     file->resolve_symbols(ctx);
