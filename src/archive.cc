@@ -43,13 +43,13 @@ ArchiveFile<E>::ArchiveFile(MappedFile&& mapped)
   if (!is_archive(this->mapped_.data()))
     Fatal().println("[{}] file is not archive", mapped);
 
-  auto slice = this->mapped_.data().subspan(SARMAG);
+  auto slice = this->mapped_.slice(SARMAG, this->mapped_.size()-SARMAG);
   FileHeader header;
 
-  for (size_t index = 0; !slice.empty(); index++) {
+  for (size_t index = 0; slice.size() > 0; index++) {
     if (slice.size() < sizeof(FileHeader))
       Fatal().println("[{}] invalid archive member#{}", this->mapped_, index);
-    std::memcpy(&header, slice.data(), sizeof(FileHeader));
+    std::memcpy(&header, slice.raw(), sizeof(FileHeader));
 
     std::string name(header.ar_name, sizeof(header.ar_name));
     name.erase(name.find_last_not_of(' ') + 1);
@@ -66,17 +66,17 @@ ArchiveFile<E>::ArchiveFile(MappedFile&& mapped)
                      header.ar_name);
       break;
     }
-    slice = slice.subspan(sizeof(FileHeader));
+    slice = slice.slice(sizeof(FileHeader), slice.size()-sizeof(FileHeader));
 
     if (name != "/" && name != "//" && !name.empty())
-      members.push_back(slice.subspan(0, member_size));
-    slice = slice.subspan(member_size);
+      members.push_back(slice.slice(0, member_size));
+    slice = slice.slice(member_size, slice.size()-member_size);
 
     if (member_size % 2 == 1)
-      slice = slice.subspan(1);
+      slice = slice.slice(1, slice.size()-1);
   }
 
-  if (!slice.empty()) {
+  if (slice.size() > 0) {
     Warn().println("[{}] invalid archive size (header size != real size)",
                    mapped);
   }
@@ -84,7 +84,16 @@ ArchiveFile<E>::ArchiveFile(MappedFile&& mapped)
 
 template <typename E>
 void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
-  for (auto member : members) {
+  for (auto& [name, symbol] : ctx.symbol_map) {
+    if (symbol.is_defined())
+      continue;
+    for (MappedFile& member : members) {
+      auto file = ObjectFile<E>(std::move(member));
+      if (file.has_non_local(name)) {
+        file.resolve_symbols(ctx);
+        file.merge_sections(ctx);
+      }
+    }
   }
 }
 

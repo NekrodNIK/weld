@@ -61,6 +61,7 @@ public:
   ObjectFile(MappedFile&& mapped);
   void resolve_symbols(Context<E>& ctx) override;
   void merge_sections(Context<E>& ctx) override;
+  bool has_non_local(std::string_view name);
 };
 
 template <typename E>
@@ -73,7 +74,7 @@ public:
 
 template <typename E>
 class ArchiveFile : public InputFile<E> {
-  std::vector<std::span<u8>> members;
+  std::vector<MappedFile> members;
 
 public:
   ArchiveFile(MappedFile&& mapped);

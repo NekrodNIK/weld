@@ -21,7 +21,7 @@ std::unique_ptr<InputFile<E>> InputFile<E>::parse(MappedFile&& mapped) {
   if (ArchiveFile<E>::is_archive(mapped.data())) {
     return std::make_unique<ArchiveFile<E>>(std::move(mapped));
   }
-    
+
   if (!elf::is_elf(mapped.data())) {
     Fatal().println("[{}] file is not elf", mapped);
   }
@@ -203,6 +203,16 @@ void ObjectFile<E>::merge_sections(Context<E>& ctx) {
       merged.align = input.align;
     }
   }
+}
+
+template <typename E>
+bool ObjectFile<E>::has_non_local(std::string_view str) {
+  for (elf::Sym<E>& elf_struct : non_local_symtab_) {
+    auto name = strtab_ + elf_struct.st_name;
+    if (std::string_view(name) == str)
+      return true;
+  }
+  return false;
 }
 
 template <typename E>
