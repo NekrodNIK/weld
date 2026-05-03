@@ -2,6 +2,7 @@
 #include "cxxopts.h"
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <optional>
 #include <print>
 #include <string>
@@ -23,7 +24,7 @@ void LinkerArgs::print() {
   std::println("whole_archive = {}", whole_archive);
 }
 
-LinkerArgs* parse_cli_options(int argc, char* argv[]) {
+std::unique_ptr<LinkerArgs> parse_cli_options(int argc, char* argv[]) {
   cxxopts::Options options("weld", "Well, linker!");
 
   // clang-format off
@@ -52,7 +53,7 @@ LinkerArgs* parse_cli_options(int argc, char* argv[]) {
     exit(0);
   }
 
-  LinkerArgs* lf = new LinkerArgs;
+  auto lf = std::make_unique<LinkerArgs>();
 
   lf->export_dynamic = result["export-dynamic"].as<bool>();
   lf->relocatable = result["relocatable"].as<bool>();

@@ -1,6 +1,7 @@
 #pragma once
 #include "arch.h"
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -17,4 +18,4 @@ struct LinkerArgs {
   void print();
 };
 
-LinkerArgs* parse_cli_options(int argc, char* argv[]);
+std::unique_ptr<LinkerArgs> parse_cli_options(int argc, char* argv[]);

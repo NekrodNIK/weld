@@ -25,11 +25,7 @@ struct FileHeader {
   char ar_size[10];
   char ar_fmag[2];
 
-  size_t size() const {
-    size_t size = 0;
-    std::strtol(reinterpret_cast<char*>(&size), nullptr, 10);
-    return size;
-  }
+  size_t size() const { return std::strtol(ar_size, nullptr, 10); }
 };
 #pragma pack(pop)
 static_assert(sizeof(FileHeader) == 60);
@@ -47,32 +43,37 @@ ArchiveFile<E>::ArchiveFile(MappedFile&& mapped)
   if (!is_archive(this->mapped_.data()))
     Fatal().println("[{}] file is not archive", mapped);
 
-  auto slice = mapped.data().subspan(SARMAG);
+  auto slice = this->mapped_.data().subspan(SARMAG);
   FileHeader header;
 
   for (size_t index = 0; !slice.empty(); index++) {
     if (slice.size() < sizeof(FileHeader))
-      Fatal().println("[{}] invalid archive member#{}", mapped, index);
+      Fatal().println("[{}] invalid archive member#{}", this->mapped_, index);
     std::memcpy(&header, slice.data(), sizeof(FileHeader));
-    slice = slice.subspan(sizeof(FileHeader));
 
-    std::string name = header.ar_name;
+    std::string name(header.ar_name, sizeof(header.ar_name));
     name.erase(name.find_last_not_of(' ') + 1);
 
     if (header.ar_fmag[0] != 0x60 || header.ar_fmag[1] != 0x0A)
-      Fatal().println("[{}] invalid archive member#{}: ", mapped, index,
-                      header.ar_name);
+      Fatal().println("[{}] invalid archive member#{}: {}", this->mapped_,
+                      index, header.ar_name);
 
-    if (slice.size() < header.size())
-      break;
-    if (name != "/" && name != "//")
-      members.push_back(slice.subspan(0, header.size()));
-    slice = slice.subspan(header.size());
+    size_t member_size = header.size();
+    size_t total_size = sizeof(FileHeader) + member_size + (member_size % 2);
 
-    auto padding = header.size() % 2;
-    if (slice.size() < padding)
+    if (slice.size() < total_size) {
+      Warn().println("[{}] truncated member#{}: {}", this->mapped_, index,
+                     header.ar_name);
       break;
-    slice = slice.subspan(padding);
+    }
+    slice = slice.subspan(sizeof(FileHeader));
+
+    if (name != "/" && name != "//" && !name.empty())
+      members.push_back(slice.subspan(0, member_size));
+    slice = slice.subspan(member_size);
+
+    if (member_size % 2 == 1)
+      slice = slice.subspan(1);
   }
 
   if (!slice.empty()) {
@@ -83,7 +84,8 @@ ArchiveFile<E>::ArchiveFile(MappedFile&& mapped)
 
 template <typename E>
 void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
-  for (auto member : members) {}
+  for (auto member : members) {
+  }
 }
 
 template <typename E>

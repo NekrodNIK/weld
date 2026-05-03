@@ -4,6 +4,7 @@
 #include "weld.h"
 #include <cassert>
 #include <cstring>
+#include <iostream>
 #include <memory>
 #include <ostream>
 #include <span>

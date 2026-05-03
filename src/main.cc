@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "elf.h"
 #include "src/arch.h"
+#include "src/errors.h"
 #include "src/thread-pool.h"
 #include "weld.h"
 #include <cassert>
@@ -15,26 +16,12 @@ process_input(std::vector<MappedFile>& mapped_files) {
   std::vector<std::unique_ptr<weld::InputFile<E>>> inputs;
 
   for (auto& mapped : mapped_files) {
-    // if (::isArFile(std::string{mapped.filename()})) {
-    //   auto members = ArReader::extractMembers(mapped);
-    //   Warn() << members.size() << '\n';
-    //   for (auto& [name, memberFile] : members) {
-    //     auto input = weld::InputFile<E>::parse(std::move(memberFile));
-    //     if (input) {
-    //       inputs.push_back(std::move(input));
-    //     } else {
-    //       weld::Warn() << "Failed to parse archive member: " << name << "
-    //       from "
-    //                    << mapped.filename() << '\n';
-    //     }
-    //   }
-    // } else
-    if (weld::elf::is_elf(mapped.data())) {
+    if (weld::elf::is_elf(mapped.data()) || weld::ArchiveFile<E>::is_archive(mapped.data())) {
       auto input = weld::InputFile<E>::parse(std::move(mapped));
       if (input) {
         inputs.push_back(std::move(input));
       } else {
-        weld::Warn() << "Failed to parse ELF file: " << mapped << '\n';
+        weld::Warn() << "Failed to parse file: " << mapped << '\n';
       }
     } else {
       weld::Warn() << "Unknown file type: " << mapped << '\n';
