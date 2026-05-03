@@ -71,17 +71,6 @@ public:
   void merge_sections(Context<E>& ctx) override;
 };
 
-template<typename E>
-class ArchiveFile : public InputFile<E> {
-  std::vector<std::span<u8>> members;
-
-  public:
-    ArchiveFile(MappedFile&& mapped);
-    void resolve_symbols(Context<E>& ctx) override;
-    void merge_sections(Context<E>& ctx) override;
-    static bool is_archive(std::span<u8> mem);
-};
-
 template <typename E>
 class InputSection {
 public:
@@ -159,8 +148,8 @@ public:
   std::vector<OutputSection<E>> output_sections;
   LockFreeHashMap<std::string, size_t> output_sec_ind;
   std::vector<Symbol<E>> local_symbols;
-
-  Context() : symbol_map(1024), merged_sections(128), output_sec_ind(64) {}
+  bool is_relocatable = false;
+  size_t start_address = 0x400000;
 };
 template <typename T, typename V>
 auto align_addr(const T& addr, const V& align) {
