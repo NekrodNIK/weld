@@ -46,13 +46,13 @@ MappedFile MappedFile::slice(size_t offset, size_t size) const {
   if (offset + size > size_) {
     throw std::out_of_range("Slice out of bounds");
   }
-  std::string child_name = filename_ + "[" + std::to_string(offset) + ":" +
-                           std::to_string(size) + "]";
+  // std::string child_name = filename_ + "[" + std::to_string(offset) + ":" +
+  //                          std::to_string(size) + "]";
   MappedFile mapped;
   mapped.ptr_ = ptr_ + offset;
   mapped.size_ = size;
   mapped.owns_ = false;
-  mapped.filename_ = child_name;
+  mapped.filename_ = filename_;
   return mapped;
 }
 

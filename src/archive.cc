@@ -88,7 +88,7 @@ void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
     if (symbol.is_defined())
       continue;
     for (MappedFile& member : members) {
-      auto file = ObjectFile<E>(std::move(member));
+      auto file = ObjectFile<E>(member.slice(0, member.size()));
       if (file.has_non_local(name)) {
         file.resolve_symbols(ctx);
         file.merge_sections(ctx);
