@@ -23,6 +23,7 @@ public:
 
 template<typename K, typename V>
 class LockFreeHashMap {
+
 	struct Node {
         K key;
         V value;
@@ -53,6 +54,105 @@ class LockFreeHashMap {
 }
 
 public:
+
+    class iterator {
+    private:
+
+        const LockFreeHashMap& map;
+        Node* current_node;
+        size_t current_bucket;
+
+        void find_first_node() {
+            for (size_t i = 0; i < map.buckets.size(); i++) {
+                Node* node = map.buckets[i].load(std::memory_order_acquire);
+                while (node != nullptr) {
+                    if (node->deleted.load(std::memory_order_acquire)) {
+                        current_bucket = i;
+                        current_node = node;
+                        return;
+                    }
+                    node = node->next.load(std::memory_order_acquire);
+                }
+            }
+            current_bucket = map.buckets.size();
+            current_node = nullptr;
+        }
+
+        void find_next_node() {
+            if (current_node == nullptr) {
+                return;
+            }
+            Node* next = current_node->next.load(std::memory_order_acquire);
+            while (next != nullptr) { 
+                if (!next->deleted.load(std::memory_order_acquire)) {
+                    current_node = next;
+                    return;
+                }
+                next = next->next.load(std::memory_order_acquire);
+            }
+            for (size_t i = current_bucket + 1; i < map.buckets.size(); ++i) {
+                Node* node = map.buckets[i].load(std::memory_order_acquire);
+                while (node != nullptr) {
+                    if (!node->deleted.load(std::memory_order_acquire)) {
+                        current_bucket = i;
+                        current_node = node;
+                        return;
+                    }
+                    node = node->next.load(std::memory_order_acquire);
+                }
+            }
+            current_bucket = map.buckets.size();
+            current_node = nullptr;
+        }
+
+
+
+    public:
+
+        iterator(const LockFreeHashMap& hashmap, bool start) : map(hashmap), current_bucket(0), current_node(nullptr) {
+            if (start) {
+                find_first_node();
+            } else {
+                current_bucket = map.buckets.size();  
+            }
+        }
+
+        std::pair<const K&, V&> operator*() const {
+            return {current_node->key, current_node->value};
+        }
+
+        Node* operator->() const {
+            return current_node; 
+        }
+
+        iterator& operator++() {
+            find_next_node();
+            return *this;
+        }
+
+        iterator operator++(int) {
+            iterator tmp = *this;
+            find_next_node();
+            return tmp;
+        }
+
+        bool operator==(const iterator& other) const {
+            return current_node == other.current_node;
+        }
+
+        bool operator!=(const iterator& other) const {
+            return !(*this == other);
+        }
+    };
+
+    iterator begin() const {
+        return iterator(*this, true); 
+    }
+    
+    iterator end()   const {
+        return iterator(*this, false); 
+    }
+    
 
 	LockFreeHashMap(size_t initial_capacity = 16) : buckets(initial_capacity), capacity(initial_capacity) {
         for (auto& bucket : buckets) {
