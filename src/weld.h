@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -21,6 +22,9 @@ template <typename E>
 class ObjectFile;
 template <typename E>
 class SharedObjectFile;
+class ArchiveMember;
+template <typename E>
+class ArchiveFile;
 template <typename E>
 class InputSection;
 template <typename E>
@@ -72,9 +76,19 @@ public:
   void merge_sections(Context<E>& ctx) override;
 };
 
+class ArchiveMember {
+  std::string_view name_;
+  std::span<u8> mem_;
+  public:
+    static std::optional<ArchiveMember> parse(std::span<u8> mem);
+    std::string_view name() const;
+    std::span<u8> mem() const;
+    size_t total_size() const;
+};
+
 template <typename E>
 class ArchiveFile : public InputFile<E> {
-  std::vector<MappedFile> members;
+  std::vector<ArchiveMember> members;
 
 public:
   ArchiveFile(MappedFile&& mapped);

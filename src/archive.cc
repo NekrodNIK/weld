@@ -1,5 +1,6 @@
 #include "src/arch.h"
 #include "src/errors.h"
+#include "src/ints.h"
 #include "weld.h"
 #include <ar.h>
 #include <cstddef>
@@ -7,31 +8,55 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <fstream>
-#include <ios>
-#include <iostream>
 #include <span>
-#include <string>
 #include <unistd.h>
 #include <vector>
 
 namespace {
-#pragma pack(push, 1)
-struct FileHeader {
+struct [[gnu::packed]] Hdr {
   char ar_name[16];
   char ar_date[12];
   char ar_uid[6], ar_gid[6];
   char ar_mode[8];
   char ar_size[10];
   char ar_fmag[2];
-
-  size_t size() const { return std::strtol(ar_size, nullptr, 10); }
 };
-#pragma pack(pop)
-static_assert(sizeof(FileHeader) == 60);
+static_assert(sizeof(Hdr) == 60);
 } // namespace
 
 namespace weld {
+std::optional<ArchiveMember> ArchiveMember::parse(std::span<u8> mem) {
+  if (mem.size() < sizeof(Hdr))
+    return {};
+
+  auto& hdr = *reinterpret_cast<Hdr*>(mem.data());
+  if (hdr.ar_fmag[0] != 0x60 || hdr.ar_fmag[1] != 0x0A)
+    return {};
+
+  size_t size;
+  auto result =
+      std::from_chars(hdr.ar_size, hdr.ar_size + sizeof(hdr.ar_size), size);
+  if (result.ec != std::errc{} || mem.size() < sizeof(Hdr) + size + size % 2)
+    return {};
+
+  auto name = std::string_view(hdr.ar_name, sizeof(hdr.ar_name));
+  auto slash = name.find('/');
+  if (slash != std::string_view::npos)
+    name = name.substr(0, slash);
+  name = name.substr(0, name.find_last_not_of(' ') + 1);
+
+  ArchiveMember obj;
+  obj.name_ = name;
+  obj.mem_ = mem.subspan(sizeof(Hdr), size);
+  return obj;
+}
+
+std::string_view ArchiveMember::name() const { return name_; }
+std::span<u8> ArchiveMember::mem() const { return mem_; }
+size_t ArchiveMember::total_size() const {
+  return sizeof(Hdr) + mem_.size() + mem_.size() % 2;
+}
+
 template <typename E>
 bool ArchiveFile<E>::is_archive(std::span<u8> mem) {
   return mem.size() >= SARMAG && std::memcmp(mem.data(), ARMAG, SARMAG) == 0;
@@ -41,44 +66,27 @@ template <typename E>
 ArchiveFile<E>::ArchiveFile(MappedFile&& mapped)
     : InputFile<E>(std::move(mapped)) {
   if (!is_archive(this->mapped_.data()))
-    Fatal().println("[{}] file is not archive", mapped);
+    Fatal().println("[{}] file is not archive", this->mapped_);
 
-  auto slice = this->mapped_.slice(SARMAG, this->mapped_.size()-SARMAG);
-  FileHeader header;
-
+  auto slice = this->mapped_.slice(SARMAG, this->mapped_.size() - SARMAG);
   for (size_t index = 0; slice.size() > 0; index++) {
-    if (slice.size() < sizeof(FileHeader))
-      Fatal().println("[{}] invalid archive member#{}", this->mapped_, index);
-    std::memcpy(&header, slice.raw(), sizeof(FileHeader));
-
-    std::string name(header.ar_name, sizeof(header.ar_name));
-    name.erase(name.find_last_not_of(' ') + 1);
-
-    if (header.ar_fmag[0] != 0x60 || header.ar_fmag[1] != 0x0A)
-      Fatal().println("[{}] invalid archive member#{}: {}", this->mapped_,
-                      index, header.ar_name);
-
-    size_t member_size = header.size();
-    size_t total_size = sizeof(FileHeader) + member_size + (member_size % 2);
-
-    if (slice.size() < total_size) {
-      Warn().println("[{}] truncated member#{}: {}", this->mapped_, index,
-                     header.ar_name);
-      break;
+    ArchiveMember member;
+    {
+      auto result = ArchiveMember::parse(slice.data());
+      if (!result)
+        Fatal().println("[{}] invalid archive member#{}", this->mapped_, index);
+      member = *result;
     }
-    slice = slice.slice(sizeof(FileHeader), slice.size()-sizeof(FileHeader));
 
-    if (name != "/" && name != "//" && !name.empty())
-      members.push_back(slice.slice(0, member_size));
-    slice = slice.slice(member_size, slice.size()-member_size);
-
-    if (member_size % 2 == 1)
-      slice = slice.slice(1, slice.size()-1);
+    if (member.name() != "/" && member.name() != "//")
+      members.push_back(member);
+    slice =
+        slice.slice(member.total_size(), slice.size() - member.total_size());
   }
 
   if (slice.size() > 0) {
     Warn().println("[{}] invalid archive size (header size != real size)",
-                   mapped);
+                   this->mapped_);
   }
 }
 
@@ -87,12 +95,12 @@ void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
   for (auto& [name, symbol] : ctx.symbol_map) {
     if (symbol.is_defined())
       continue;
-    for (MappedFile& member : members) {
-      auto file = ObjectFile<E>(member.slice(0, member.size()));
-      if (file.has_non_local(name)) {
-        file.resolve_symbols(ctx);
-        file.merge_sections(ctx);
-      }
+    for (auto& member : members) {
+      // auto file = ObjectFile<E>(member.slice(0, member.size()));
+      // if (file.has_non_local(name)) {
+      //   file.resolve_symbols(ctx);
+      //   file.merge_sections(ctx);
+      // }
     }
   }
 }
@@ -102,78 +110,3 @@ void ArchiveFile<E>::merge_sections(Context<E>& ctx) {}
 template class ArchiveFile<weld::arch::i386>;
 template class ArchiveFile<weld::arch::x86_64>;
 }; // namespace weld
-
-class ArWriter {
-public:
-  static void write(const std::string& archname,
-                    const std::vector<std::string>& filenames) {
-    std::ofstream writer(archname, std::ios::binary);
-    if (!writer) {
-      throw std::ios::failure("Couldn't open archive file for writing: " +
-                              archname);
-    }
-    writer.write(ARMAG, SARMAG);
-
-    for (const auto& path : filenames) {
-      std::ifstream fileReader(path, std::ios::binary);
-      if (!fileReader) {
-        throw std::ios::failure("Couldn't open file for reading:" + path);
-      }
-
-      fileReader.seekg(0, std::ios::end);
-      size_t size = fileReader.tellg();
-      fileReader.seekg(0, std::ios::beg);
-      std::vector<char> data(size);
-      fileReader.read(data.data(), size);
-
-      if (fileReader.gcount() != size) {
-        throw std::ios::failure("Couldn't read entire file: " + path);
-      }
-
-      std::string name = path;
-      int pos = name.find_last_of("/\\");
-      if (pos != std::string::npos) {
-        name = name.substr(pos + 1);
-      }
-
-      if (name.size() > 16) {
-        throw std::invalid_argument("Filename: " + name + " is too long");
-      }
-
-      FileHeader fileHeader;
-      std::memset(fileHeader.ar_name, ' ', sizeof(fileHeader.ar_name));
-      std::memcpy(fileHeader.ar_name, name.c_str(), name.size());
-      std::memcpy(fileHeader.ar_fmag, "`\n", 2);
-
-      char tmp[16];
-      int len;
-
-      len = snprintf(tmp, sizeof(tmp), "%12ld", std::time(nullptr));
-      memcpy(fileHeader.ar_date, tmp,
-             std::min<size_t>(len, sizeof(fileHeader.ar_date)));
-
-      len = snprintf(tmp, sizeof(tmp), "%6d", getuid());
-      memcpy(fileHeader.ar_uid, tmp,
-             std::min<size_t>(len, sizeof(fileHeader.ar_uid)));
-
-      len = snprintf(tmp, sizeof(tmp), "%6d", getgid());
-      memcpy(fileHeader.ar_gid, tmp,
-             std::min<size_t>(len, sizeof(fileHeader.ar_gid)));
-
-      len = snprintf(tmp, sizeof(tmp), "%8o", 0644);
-      memcpy(fileHeader.ar_mode, tmp,
-             std::min<size_t>(len, sizeof(fileHeader.ar_mode)));
-
-      len = snprintf(tmp, sizeof(tmp), "%10zu", data.size());
-      memcpy(fileHeader.ar_size, tmp,
-             std::min<size_t>(len, sizeof(fileHeader.ar_size)));
-
-      writer.write(reinterpret_cast<char*>(&fileHeader), sizeof(fileHeader));
-      writer.write(data.data(), data.size());
-
-      if (data.size() % 2 != 0) {
-        writer.put('\n');
-      }
-    }
-  }
-};
