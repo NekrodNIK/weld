@@ -1,7 +1,9 @@
+#include <cassert>
 #include <gtest/gtest.h>
 #include "../src/hashmap.h"
 #include "../src/thread-pool.h"
 #include <iostream>
+#include <unordered_map>
 
 static int fib(int x) {
 	if (x <= 1) {
@@ -24,4 +26,24 @@ TEST(HashMap, Base) {
 		std::cout << map.at(i) << std::endl;
 	}
 	std::cout << "getted" << std::endl;
+}
+
+
+TEST(HashMap, Iterator) {
+	LockFreeHashMap<int, int> map;
+	std::unordered_map<int, int> cmp_map;
+	for (int i = 0; i < 16; i++) {
+		int value = fib(i + 30);
+		map.insert(i, value);
+		cmp_map.emplace(i, value);
+	}
+	for (const auto& [key, value] : map) {
+		ASSERT_TRUE(map.at(key) == cmp_map.at(key) && cmp_map.at(key) == value);
+	}
+}
+
+
+int main() {
+	testing::InitGoogleTest();
+	auto s = RUN_ALL_TESTS();
 }
