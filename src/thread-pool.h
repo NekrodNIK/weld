@@ -35,7 +35,7 @@ private:
 	std::atomic<size_t> active_tasks = 0;
 
 	void worker(size_t thread_index) {
-		assert(thread_index < threads.size());
+		assert(thread_index < queues.size());
 		while (true) {
 			std::function<void()> current_task;
 			{
@@ -56,10 +56,13 @@ private:
 public:
 
 	ThreadPool(size_t core_pool_size) : running(true), current_worker(0) {
+		queues.reserve(core_pool_size);
 		threads.reserve(core_pool_size);
 		for (size_t i = 0; i < core_pool_size; i++) {
 			queues.emplace_back(std::make_unique<TaskQueue>());
-			threads.emplace_back(&ThreadPool::worker, this, i);
+		}
+		for (size_t j = 0; j < core_pool_size; j++) {
+			threads.emplace_back(&ThreadPool::worker, this, j);
 		}
 	}
 
@@ -142,8 +145,9 @@ public:
     requires(std::ranges::range<C> && std::invocable<F, std::ranges::range_reference_t<C>>)
     Chain& foreach(C& collection, F&& func) {
     	for (auto& c : collection) {
-    		futures.push_back(pool.submit([&func, &c]() { func(c); }));
+    		futures.push_back(pool.submit([func, &c]() { func(c); }));
     	}
+    	wait();
     	return *this;
     }
 
@@ -151,8 +155,9 @@ public:
     requires(std::ranges::range<C> && std::invocable<F, std::ranges::range_reference_t<C>>)
     Chain& foreach(C&& collection, F&& func) {
     	for (auto& c : collection) {
-    		futures.push_back(pool.submit([&func, &c]() { func(c); }));
+    		futures.push_back(pool.submit([func, &c]() { func(c); }));
     	}
+    	wait();
     	return *this;
     }
 

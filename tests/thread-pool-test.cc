@@ -129,3 +129,9 @@ TEST(ThreadPool, CmpTime) {
 	ASSERT_EQ(res1, res2);
 	#endif 
 }
+
+
+int main() {
+	testing::InitGoogleTest();
+	auto s = RUN_ALL_TESTS();
+}
