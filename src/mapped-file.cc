@@ -42,6 +42,15 @@ MappedFile MappedFile::open(const fs::path& path) {
   return file;
 }
 
+MappedFile MappedFile::from_span(std::span<u8> span, bool owns, std::string filename) {
+  MappedFile mapped;
+  mapped.ptr_ = span.data();
+  mapped.size_ = span.size();
+  mapped.owns_ = owns;
+  mapped.filename_ = filename;
+  return mapped;
+}
+
 MappedFile MappedFile::slice(size_t offset, size_t size) const {
   if (offset + size > size_) {
     throw std::out_of_range("Slice out of bounds");
@@ -54,6 +63,10 @@ MappedFile MappedFile::slice(size_t offset, size_t size) const {
   mapped.owns_ = false;
   mapped.filename_ = child_name;
   return mapped;
+}
+
+MappedFile MappedFile::slice(size_t offset) const {
+  return MappedFile::slice(offset, size_ - offset);
 }
 
 MappedFile::~MappedFile() {

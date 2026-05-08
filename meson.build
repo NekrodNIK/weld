@@ -8,7 +8,6 @@ project(
 
 srcs = [
   'src/cli.cc',
-  'src/main.cc',
   'src/input-file.cc',
   'src/mapped-file.cc',
   'src/elf.cc',
@@ -16,6 +15,7 @@ srcs = [
   'src/output-file.cc',
   'src/archive.cc',
 ]
+incdirs = include_directories('include', '.')
 
 if target_machine.system() == 'windows'
   error('Windows is not supported')
@@ -23,13 +23,13 @@ else
   srcs += ['src/mapped-file-unix.cc']
 endif
 
-incdir = include_directories('include')
+weld_lib = static_library('weld_lib', srcs, include_directories : incdirs)
 exe = executable(
   'weld',
-  srcs,
+  ['src/main.cc'],
+  link_with: weld_lib,
   install : true,
-  include_directories: incdir,
+  include_directories: incdirs,
 )
-
 
 subdir('tests')

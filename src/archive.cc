@@ -96,7 +96,7 @@ void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
     if (symbol.is_defined())
       continue;
     for (auto& member : members) {
-      // auto file = ObjectFile<E>(member.slice(0, member.size()));
+      // auto file = ObjectFile<E>(MappedFile::ha member.mem());
       // if (file.has_non_local(name)) {
       //   file.resolve_symbols(ctx);
       //   file.merge_sections(ctx);
