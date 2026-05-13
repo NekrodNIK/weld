@@ -37,7 +37,7 @@ TEST(HashMap, Iterator) {
 		map.insert(i, value);
 		cmp_map.emplace(i, value);
 	}
-	for (const auto& [key, value] : map) {
+	for (const auto&& [key, value] : map) {
 		ASSERT_TRUE(map.at(key) == cmp_map.at(key) && cmp_map.at(key) == value);
 	}
 }

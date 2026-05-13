@@ -30,25 +30,25 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
         .addr = cur_addr,
         .relocations = std::move(merged.relocations),
     });
-    ctx.output_sec_ind[name] = ctx.output_sections.size() - 1;
+    ctx.output_sec_ind.insert(name, ctx.output_sections.size() - 1);
     cur_addr += ctx.output_sections.back().data.size();
   };
 
-  for (auto& [name, merged] : ctx.merged_sections) {
+  for (const auto& [name, merged] : ctx.merged_sections) {
     if (name.find(".text") != 0)
       continue;
     generate_output_sec(merged, name);
   }
 
   cur_addr = align_addr(cur_addr, 0x1000);
-  for (auto& [name, merged] : ctx.merged_sections) {
+  for (const auto& [name, merged] : ctx.merged_sections) {
     if (name.find(".rodata") != 0)
       continue;
     generate_output_sec(merged, name);
   }
 
   cur_addr = align_addr(cur_addr, 0x1000);
-  for (auto& [name, merged] : ctx.merged_sections) {
+  for (const auto& [name, merged] : ctx.merged_sections) {
     if (name.find(".text") == 0 || name.find(".rodata") == 0)
       continue;
     generate_output_sec(merged, name);
@@ -57,14 +57,14 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   auto set_addr = [&ctx](auto& sym) {
     if (sym.is_defined()) {
       sym.output_section =
-          &ctx.output_sections[ctx.output_sec_ind[sym.input_section->name]];
+          &ctx.output_sections[ctx.output_sec_ind.at(sym.input_section->name)];
       sym.addr += sym.output_section->addr + sym.input_section->offset;
       std::println("section: {}, symbol: {}, addr: {:X}",
                    sym.input_section->name, sym.name, sym.addr);
     }
   };
 
-  for (auto& [_, sym] : ctx.symbol_map) {
+  for (const auto& [_, sym] : ctx.symbol_map) {
     set_addr(sym);
   }
   for (auto& sym : ctx.local_symbols) {
@@ -73,8 +73,8 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
 
   for (auto& sec : ctx.output_sections) {
     for (Relocation<E>& rel : sec.relocations) {
-      auto S = ctx.symbol_map[rel.symbol_name].addr;
-      auto P = ctx.output_sections[ctx.output_sec_ind[sec.name]].addr +
+      auto S = ctx.symbol_map.at(rel.symbol_name).addr;
+      auto P = ctx.output_sections[ctx.output_sec_ind.at(sec.name)].addr +
                rel.rela.r_offset;
       auto A = rel.rela.r_addend;
 
@@ -191,7 +191,7 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
     int shndx = elf::SHN_ABS;
     if (symbol.input_section) {
       const std::string& sec_name = symbol.input_section->name;
-      shndx = ctx.output_sec_ind[sec_name] + 1;
+      shndx = ctx.output_sec_ind.at(sec_name) + 1;
     }
 
     elf_struct.st_name = strtab.size();
@@ -211,7 +211,7 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
 
   for (auto& symbol : ctx.local_symbols)
     process_symbol(symbol);
-  for (auto& [_, symbol] : ctx.symbol_map)
+  for (const auto& [_, symbol] : ctx.symbol_map)
     process_symbol(symbol);
 
   auto process_section = [&shdr_tab,
@@ -279,7 +279,7 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   ehdr.e_type = elf::ET_EXEC;
   ehdr.e_machine = 62;
   ehdr.e_version = 1;
-  ehdr.e_entry = ctx.symbol_map["_start"].addr;
+  ehdr.e_entry = ctx.symbol_map.at("_start").addr;
   ehdr.e_phoff = sizeof(ehdr);
   ehdr.e_phentsize = sizeof(elf::Phdr<E>);
   ehdr.e_phnum = phdrs.size();

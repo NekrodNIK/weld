@@ -18,6 +18,7 @@ struct LinkerFlags {
   std::vector<std::filesystem::path> input_paths;
   std::optional<weld::arch::Enum> arch;
   std::string arch_name; // for debug purposes
+  int num_threads = 0;
 
   LinkerFlags(std::vector<std::filesystem::path> sources,
               std::filesystem::path destination, bool export_dyn, bool relocate,
@@ -25,7 +26,8 @@ struct LinkerFlags {
               std::string a_name)
       : input_paths(sources), output_file(destination), arch(arch_),
         export_dynamic(export_dyn), relocatable(relocate),
-        no_standart_library(nostdlib), version(version_), arch_name(a_name) {}
+        no_standart_library(nostdlib), version(version_), arch_name(a_name),
+        num_threads(1) {}
 
   LinkerFlags() {}
 
