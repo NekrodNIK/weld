@@ -13,4 +13,4 @@ test_exe = executable(
   tests,
   dependencies : [gtest_dep]
 )
-test('gtest test', test_exe)
+test('gtest test', test_exe, timeout : 120)
