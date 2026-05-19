@@ -129,3 +129,35 @@ TEST(ThreadPool, CmpTime) {
 	ASSERT_EQ(res1, res2);
 	#endif 
 }
+
+TEST(ThreadPool, SubmitWait) {
+    ThreadPool pool(4);
+    std::atomic<int> counter{0};
+    const int num_tasks = 10000;
+
+    for (int i = 0; i < num_tasks; ++i) {
+        pool.submit([&counter]() {
+            counter.fetch_add(1, std::memory_order_relaxed);
+        });
+    }
+    pool.await_termination();
+    ASSERT_EQ(counter.load(), num_tasks);
+}
+
+TEST(ThreadPoolRace, AwaitTermination) {
+    for (int i = 0; i < 100; ++i) {
+        ThreadPool pool(4);
+        std::atomic<int> completed{0};
+        std::thread submitter([&pool, &completed]() {
+            for (int j = 0; j < 1000; ++j) {
+                pool.submit([&completed]() {
+                    std::this_thread::sleep_for(std::chrono::microseconds(10));
+                    completed.fetch_add(1, std::memory_order_relaxed);
+                });
+            }
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        pool.await_termination();
+        submitter.join();
+    }
+}

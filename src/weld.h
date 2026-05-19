@@ -10,6 +10,7 @@
 #include <vector>
 #include "mapped-file.h"
 #include "elf.h"
+#include "hashmap.h"
 
 namespace weld {
 template <typename E>
@@ -142,12 +143,13 @@ struct string_hash {
 template <typename E>
 class Context {
 public:
-  std::unordered_map<std::string, Symbol<E>, string_hash> symbol_map;
-  std::unordered_map<std::string, MergedSection<E>, string_hash>
-      merged_sections;
+  LockFreeHashMap<std::string, Symbol<E>> symbol_map;
+  LockFreeHashMap<std::string, MergedSection<E>> merged_sections;
   std::vector<OutputSection<E>> output_sections;
-  std::unordered_map<std::string, size_t> output_sec_ind;
+  LockFreeHashMap<std::string, size_t> output_sec_ind;
   std::vector<Symbol<E>> local_symbols;
+
+  Context() : symbol_map(1024), merged_sections(128), output_sec_ind(64) {}
 };
 template <typename T, typename V>
 auto align_addr(const T& addr, const V& align) {

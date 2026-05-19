@@ -45,6 +45,7 @@ LinkerFlags* parse_cli_options(int argc, char* argv[]) {
       ("o", "Output file", cxxopts::value<std::string>()->default_value("a.out"))
       ("input", "Input files", cxxopts::value<std::vector<std::string>>())
       ("m,target", "Architecture", cxxopts::value<std::string>())
+      ("j,threads", "Number of threads", cxxopts::value<int>()->default_value("0"))
   ;
   // clang-format on
 
@@ -74,6 +75,8 @@ LinkerFlags* parse_cli_options(int argc, char* argv[]) {
     lf->arch = std::nullopt;
   }
 
+  lf->num_threads = result["threads"].as<int>();
+  if (lf->num_threads == 0) lf->num_threads = 1;
   lf->output_file = std::filesystem::path(result["o"].as<std::string>());
 
   std::vector<std::filesystem::path> sources;

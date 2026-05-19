@@ -35,6 +35,7 @@ class LockFreeHashMap {
 
     std::vector<std::atomic<Node*>> buckets;
     size_t capacity;
+    std::atomic<size_t> entry_count{0};
     std::hash<K> hasher;
 
     size_t bucket_index(const K& key) const {
@@ -66,7 +67,7 @@ public:
             for (size_t i = 0; i < map.buckets.size(); i++) {
                 Node* node = map.buckets[i].load(std::memory_order_acquire);
                 while (node != nullptr) {
-                    if (node->deleted.load(std::memory_order_acquire)) {
+                    if (!node->deleted.load(std::memory_order_acquire)) {
                         current_bucket = i;
                         current_node = node;
                         return;
@@ -171,7 +172,16 @@ public:
         }
     }
 
+    bool contains(const K& key) const {
+        return find_node(key) != nullptr;
+    }
+
     bool insert(const K& key, const V& value) {
+        Node* existing = find_node(key);
+        if (existing) {
+            existing->value = value;
+            return false;
+        }
         size_t index = bucket_index(key);
         Node* new_node = new Node(key, value);
         while (true) {
@@ -181,6 +191,7 @@ public:
                     head, new_node,
                     std::memory_order_release,
                     std::memory_order_acquire)) {
+                entry_count.fetch_add(1, std::memory_order_release);
                 return true;
             }
         }
@@ -225,6 +236,7 @@ public:
                         expected, true,
                         std::memory_order_release,
                         std::memory_order_relaxed)) {
+                    entry_count.fetch_sub(1, std::memory_order_release);
                     return true;
                 }
             }
@@ -234,6 +246,6 @@ public:
     }
 
     size_t size() const {
-        return capacity;
+        return entry_count.load(std::memory_order_acquire);
     }	
 };
