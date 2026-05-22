@@ -1,0 +1,4 @@
+./libs/libc.a
+/usr/lib64/libcrypt.a
+./libs/libgcc_eh.a
+./libs/libgcc.a
