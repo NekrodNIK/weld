@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <iterator>
 #include <span>
 #include <unistd.h>
 #include <vector>
@@ -95,13 +96,16 @@ void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
   for (auto& [name, symbol] : ctx.symbol_map) {
     if (symbol.is_defined())
       continue;
+
     for (auto& member : members) {
-      // auto file = ObjectFile<E>(MappedFile::ha member.mem());
-      // if (file.has_non_local(name)) {
-      //   file.resolve_symbols(ctx);
-      //   file.merge_sections(ctx);
+      ObjectFile<E> obj (MappedFile::from_span(member.mem()));
+      // if (obj.has_non_local(name)) {
+      //   loaded_objs.push_back(std::move(obj));
+      //   // obj.resolve_symbols(ctx);
       // }
     }
+
+    std::cout << loaded_objs.size() << std::endl;
   }
 }
 

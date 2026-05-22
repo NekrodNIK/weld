@@ -26,10 +26,10 @@ std::unique_ptr<InputFile<E>> InputFile<E>::parse(MappedFile&& mapped) {
     Fatal().println("[{}] file is not elf", mapped);
   }
 
-  auto file_arch = elf::get_arch(mapped.data());
-  if (file_arch != arch::get_enum<E>()) {
+  auto file_arch = elf::get_arch_tag(mapped.data());
+  if (file_arch != E::tag) {
     Fatal().println("[{}] the architecture {} expected but {}", mapped,
-                    file_arch, arch::get_enum<E>());
+                    file_arch, E::tag);
   }
 
   auto type = reinterpret_cast<elf::Ehdr<E>*>(mapped.raw())->e_type;
@@ -95,7 +95,7 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
           std::span<u8>(this->mapped_.raw() + shdr.sh_offset, shdr.sh_size);
       section.align = shdr.sh_addralign;
     } else if (shdr.sh_type == elf::SHT_RELA) {
-      section.rela_tab = elf::get_rela_tab(this->mapped_.data(), shdr);
+      section.rel_tab = elf::get_rel_tab(this->mapped_.data(), shdr);
     } else {
       continue;
     }
@@ -179,8 +179,8 @@ void ObjectFile<E>::merge_sections(Context<E>& ctx) {
     input.offset = merged.data.size();
     merged.data.insert(merged.data.end(), input.data.begin(), input.data.end());
 
-    for (elf::Rela<E> rela : input.rela_tab) {
-      auto ind = rela.r_sym();
+    for (elf::Rel<E> rel : input.rel_tab) {
+      auto ind = rel.r_sym();
       auto& elf_struct = ind < local_symtab_.size()
                              ? local_symtab_[ind]
                              : non_local_symtab_[ind - local_symtab_.size()];
@@ -192,9 +192,9 @@ void ObjectFile<E>::merge_sections(Context<E>& ctx) {
         symbol_name = strtab_ + elf_struct.st_name;
       }
 
-      rela.r_offset += input.offset;
+      rel.r_offset += input.offset;
       merged.relocations.push_back({
-          .rela = rela,
+          .rel = rel,
           .symbol_name = symbol_name,
       });
     }

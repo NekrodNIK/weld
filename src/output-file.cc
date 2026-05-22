@@ -76,10 +76,10 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
 
   for (auto& sec : ctx.output_sections) {
     for (Relocation<E>& rel : sec.relocations) {
-      auto S = ctx.symbol_map.at(rel.symbol_name).addr;
-      auto P = ctx.output_sections[ctx.output_sec_ind.at(sec.name)].addr +
-               rel.rela.r_offset;
-      auto A = rel.rela.r_addend;
+      auto S = ctx.symbol_map[rel.symbol_name].addr;
+      auto P = ctx.output_sections[ctx.output_sec_ind[sec.name]].addr +
+               rel.rel.r_offset;
+      auto A = rel.rel.r_addend;
 
       constexpr auto R_X86_64_64 = 1;
       constexpr auto R_X86_64_PC32 = 2;
@@ -87,20 +87,20 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
       constexpr auto R_X86_64_32 = 10;
       constexpr auto R_X86_64_32S = 11;
 
-      auto type = rel.rela.r_info & 0xffffffffL;
+      auto type = rel.rel.r_info & 0xffffffffL;
       if (type == R_X86_64_64) {
         auto result = S + A;
         auto size = 8;
-        std::memcpy(sec.data.data() + rel.rela.r_offset, &result, size);
+        std::memcpy(sec.data.data() + rel.rel.r_offset, &result, size);
       } else if (type == R_X86_64_PC32 ||
                  type == R_X86_64_PLT32) { // FIXME: plt stub
         auto result = S + A - P;
         auto size = 4;
-        std::memcpy(sec.data.data() + rel.rela.r_offset, &result, size);
+        std::memcpy(sec.data.data() + rel.rel.r_offset, &result, size);
       } else if (type == R_X86_64_32 || type == R_X86_64_32S) {
         auto result = S + A;
         auto size = 4;
-        std::memcpy(sec.data.data() + rel.rela.r_offset, &result, size);
+        std::memcpy(sec.data.data() + rel.rel.r_offset, &result, size);
       } else {
         Fatal().println("unknown relocation type: {}", type);
       }

@@ -8,7 +8,7 @@
 struct LinkerArgs {
   std::vector<std::filesystem::path> input_paths;
   std::filesystem::path output_path;
-  std::optional<weld::arch::Enum> arch;
+  std::optional<weld::arch::Tag> arch;
 
   bool relocatable;
   bool export_dynamic;

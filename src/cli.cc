@@ -62,9 +62,9 @@ std::unique_ptr<LinkerArgs> parse_cli_options(int argc, char* argv[]) {
     auto arch_name = arch_opt.value();
 
     if (arch_name == "elf_x86_64") {
-      lf->arch = weld::arch::Enum::x86_64;
+      lf->arch = weld::arch::Tag::x86_64;
     } else if (arch_name == "elf_i386") {
-      lf->arch = weld::arch::Enum::i386;
+      lf->arch = weld::arch::Tag::i386;
     } else {
       weld::Fatal() << "Unknown architecture";
     }

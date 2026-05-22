@@ -111,8 +111,6 @@ template <typename E>
 struct Dyn;
 template <typename E>
 struct Rel;
-template <typename E>
-struct Rela;
 
 template <typename E>
 using word = std::conditional_t<E::is_64, u64, i32>;
@@ -199,13 +197,24 @@ struct Dyn {
   sword<E> d_tag;
   word<E> d_val;
 };
+
 template <typename E>
-struct Rel {
+  requires(!E::is_rela)
+struct Rel<E> {
   word<E> r_offset;
   word<E> r_info;
+  size_t r_sym() {
+    if constexpr (E::is_64) {
+      return r_info >> 32;
+    } else {
+      return r_info >> 8;
+    }
+  }
 };
+
 template <typename E>
-struct Rela {
+  requires(E::is_rela)
+struct Rel<E> {
   word<E> r_offset;
   word<E> r_info;
   sword<E> r_addend;
@@ -219,7 +228,7 @@ struct Rela {
 };
 
 bool is_elf(std::span<const u8> file);
-arch::Enum get_arch(std::span<const u8> file);
+arch::Tag get_arch_tag(std::span<const u8> file);
 template <typename E>
 Ehdr<E>& get_ehdr(std::span<u8> file);
 template <typename E>
@@ -232,5 +241,5 @@ char* get_strtab(std::span<u8> file);
 template <typename E>
 char* get_shstrtab(std::span<u8> file);
 template <typename E>
-std::span<Rela<E>> get_rela_tab(std::span<u8> file, Shdr<E>& shdr);
+std::span<Rel<E>> get_rel_tab(std::span<u8> file, Shdr<E>& shdr);
 } // namespace weld::elf

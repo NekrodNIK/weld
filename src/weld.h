@@ -45,7 +45,10 @@ protected:
   InputFile(MappedFile&& mapped);
 
 public:
+  InputFile(InputFile&&) = default;
+  InputFile& operator=(InputFile&&) = default;
   virtual ~InputFile() = default;
+
   static std::unique_ptr<InputFile> parse(MappedFile&& mapped);
   std::string_view filename() const { return mapped_.filename(); }
   virtual void resolve_symbols(Context<E>& ctx) = 0;
@@ -89,6 +92,7 @@ class ArchiveMember {
 template <typename E>
 class ArchiveFile : public InputFile<E> {
   std::vector<ArchiveMember> members;
+  std::vector<ObjectFile<E>> loaded_objs;
 
 public:
   ArchiveFile(MappedFile&& mapped);
@@ -102,10 +106,14 @@ class InputSection {
 public:
   std::string name;
   std::span<u8> data;
-  std::span<elf::Rela<E>> rela_tab;
-  std::span<elf::Rel<E>> rel_tab; // TODO: implement it
+  std::span<elf::Rel<E>> rel_tab;
   size_t offset;
   size_t align;
+
+  void scan_relocations(Context<E>& ctx);
+  void apply_reloc_alloc(Context<E>& ctx);
+  void apply_reloc_nonalloc(Context<E>& ctx);
+  void write_to(Context<E>& ctx, std::span<u8> buf);
 };
 
 template <typename E>
@@ -140,7 +148,7 @@ public:
 template <typename E>
 class Relocation {
 public:
-  elf::Rela<E> rela;
+  elf::Rel<E> rel;
   std::string symbol_name;
 };
 

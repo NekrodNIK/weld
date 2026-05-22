@@ -62,23 +62,21 @@ int main(int argc, char** argv) {
   auto flags = parse_cli_options(argc, argv);
 
   auto mapped_files = open_input(flags->input_paths);
-  // FIXME: Add detection the archive architecture (and generally ensure closer
-  // integration of archive processing with other parts of the project).
   auto first_elf =
       std::find_if(mapped_files.begin(), mapped_files.end(), [](auto& mapped) {
         return weld::elf::is_elf(mapped.data());
       });
-  auto arch = flags->arch.value_or(weld::elf::get_arch(first_elf->data()));
+  auto arch = flags->arch.value_or(weld::elf::get_arch_tag(first_elf->data()));
   assert(first_elf != mapped_files.end());
 
   switch (arch) {
-  case weld::arch::Enum::i386:
+  case weld::arch::Tag::i386:
     weld::main<weld::arch::i386>(std::move(mapped_files), *flags);
     break;
-  case weld::arch::Enum::x86_64:
+  case weld::arch::Tag::x86_64:
     weld::main<weld::arch::x86_64>(std::move(mapped_files), *flags);
     break;
-  case weld::arch::Enum::unsupported:
+  case weld::arch::Tag::unsupported:
     weld::Fatal() << *first_elf << " unsupported architecture";
   }
 }
