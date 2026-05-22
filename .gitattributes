@@ -1,0 +1,3 @@
+benchmarks/build/** linguist-vendored=true linguist-generated=true
+benchmarks/libs/** linguist-vendored=true linguist-generated=true
+benchmarks/src/** linguist-vendored=true linguist-generated=true
