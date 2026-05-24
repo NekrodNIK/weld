@@ -97,7 +97,7 @@ void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
   std::unordered_set<std::string> undefined;
   for (auto& [name, symbol] : ctx.symbol_map) {
     if (!symbol.is_defined()) {
-      undefined.insert(std::string(name));
+      undefined.insert(name);
     }
   }
 
@@ -141,7 +141,7 @@ void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
 template <typename E>
 void ArchiveFile<E>::merge_sections(Context<E>& ctx) {
   for (auto& obj : loaded_objs) {
-    obj->merge_sections(ctx);
+    obj.merge_sections(ctx);
   }
 }
 template class ArchiveFile<weld::arch::i386>;

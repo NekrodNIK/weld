@@ -142,7 +142,7 @@ public:
   OutputSection<E>* output_section;
   bool is_weak;
   size_t addr;
-  bool is_defined() { return input_section; }
+  bool is_defined() const { return input_section; }
 };
 
 template <typename E>

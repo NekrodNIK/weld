@@ -123,7 +123,7 @@ void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
                               elf_struct.st_bind() == elf::STB_GNU_UNIQUE),
                   .addr = elf_struct.st_value};
     if (!ctx.symbol_map.contains(name) || !ctx.symbol_map.at(name).is_defined()) {
-      ctx.symbol_map.insert(name, new_symbol);
+      ctx.symbol_map[name] = new_symbol;
       continue;
     }
     if (!new_symbol.is_defined()) {
@@ -171,7 +171,7 @@ template <typename E>
 void ObjectFile<E>::merge_sections(Context<E>& ctx) {
   for (auto& [name, input] : sections_) {
     if (!ctx.merged_sections.contains(name)) {
-      ctx.merged_sections.insert(name, MergedSection<E>{});
+      ctx.merged_sections[name] = MergedSection<E>{};
     }
 
     MergedSection<E>& merged = ctx.merged_sections.at(name);

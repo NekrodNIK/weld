@@ -1,5 +1,6 @@
 #include "cli.h"
 #include "cxxopts.h"
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -36,6 +37,7 @@ std::unique_ptr<LinkerArgs> parse_cli_options(int argc, char* argv[]) {
       ("o", "Output file", cxxopts::value<std::string>()->default_value("a.out"))
       ("input", "Input files", cxxopts::value<std::vector<std::string>>())
       ("m,target", "Architecture", cxxopts::value<std::string>())
+      ("threads", "Threads", cxxopts::value<int>())
       ("pie", "Position Independent Executable", cxxopts::value<bool>()->default_value("false"))
       ("whole-archive", "Using whole archive", cxxopts::value<bool>()->default_value("false"))
   ;
