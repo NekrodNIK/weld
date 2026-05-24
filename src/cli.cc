@@ -72,6 +72,7 @@ std::unique_ptr<LinkerArgs> parse_cli_options(int argc, char* argv[]) {
     lf->arch = std::nullopt;
   }
 
+  lf->num_threads = result["threads"].as_optional<int>().value_or(1);
   lf->output_path = std::filesystem::path(result["o"].as<std::string>());
 
   std::vector<std::filesystem::path> sources;

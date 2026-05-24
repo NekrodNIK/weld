@@ -14,6 +14,7 @@ struct LinkerArgs {
   bool export_dynamic;
   bool pie;
   bool whole_archive;
+  int num_threads;
 
   void print();
 };
