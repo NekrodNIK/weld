@@ -11,6 +11,7 @@
 #include <iterator>
 #include <span>
 #include <unistd.h>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -93,24 +94,56 @@ ArchiveFile<E>::ArchiveFile(MappedFile&& mapped)
 
 template <typename E>
 void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
+  std::unordered_set<std::string> undefined;
   for (auto& [name, symbol] : ctx.symbol_map) {
-    if (symbol.is_defined())
-      continue;
+    if (!symbol.is_defined()) {
+      undefined.insert(std::string(name));
+    }
+  }
 
-    for (auto& member : members) {
-      ObjectFile<E> obj (MappedFile::from_span(member.mem()));
-      // if (obj.has_non_local(name)) {
-      //   loaded_objs.push_back(std::move(obj));
-      //   // obj.resolve_symbols(ctx);
-      // }
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    std::vector<size_t> to_load;
+
+    for (size_t i = 0; i < members.size(); ++i) {
+      auto member_mapped = MappedFile::from_span(members[i].mem());
+      if (!elf::is_elf(member_mapped.data()))
+        continue;
+
+      ObjectFile<E> temp_obj(std::move(member_mapped));
+      
+      for (const auto& sym_name : undefined) {
+        if (temp_obj.has_non_local(sym_name)) {
+          to_load.push_back(i);
+          changed = true;
+          break;
+        }
+      }
     }
 
-    std::cout << loaded_objs.size() << std::endl;
+    for (size_t idx : to_load) {
+      auto member_mapped = MappedFile::from_span(members[idx].mem());
+      auto obj = std::make_unique<ObjectFile<E>>(std::move(member_mapped));
+      obj->resolve_symbols(ctx);
+      loaded_objs.push_back(std::move(*obj));
+    }
+
+    undefined.clear();
+    for (auto& [name, symbol] : ctx.symbol_map) {
+      if (!symbol.is_defined()) {
+        undefined.insert(std::string(name));
+      }
+    }
   }
 }
 
 template <typename E>
-void ArchiveFile<E>::merge_sections(Context<E>& ctx) {}
+void ArchiveFile<E>::merge_sections(Context<E>& ctx) {
+  for (auto& obj : loaded_objs) {
+    obj->merge_sections(ctx);
+  }
+}
 template class ArchiveFile<weld::arch::i386>;
 template class ArchiveFile<weld::arch::x86_64>;
 }; // namespace weld

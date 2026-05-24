@@ -177,10 +177,10 @@ struct string_hash {
 template <typename E>
 class Context {
 public:
-  LockFreeHashMap<std::string, Symbol<E>> symbol_map;
-  LockFreeHashMap<std::string, MergedSection<E>> merged_sections;
+  std::unordered_map<std::string, Symbol<E>> symbol_map;
+  std::unordered_map<std::string, MergedSection<E>> merged_sections;
   std::vector<OutputSection<E>> output_sections;
-  LockFreeHashMap<std::string, size_t> output_sec_ind;
+  std::unordered_map<std::string, size_t> output_sec_ind;
   std::vector<Symbol<E>> local_symbols;
   
   bool is_relocatable = false;

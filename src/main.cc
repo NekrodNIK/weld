@@ -16,7 +16,8 @@ process_input(std::vector<MappedFile>& mapped_files) {
   std::vector<std::unique_ptr<weld::InputFile<E>>> inputs;
 
   for (auto& mapped : mapped_files) {
-    if (weld::elf::is_elf(mapped.data()) || weld::ArchiveFile<E>::is_archive(mapped.data())) {
+    if (weld::elf::is_elf(mapped.data()) ||
+        weld::ArchiveFile<E>::is_archive(mapped.data())) {
       auto input = weld::InputFile<E>::parse(std::move(mapped));
       if (input) {
         inputs.push_back(std::move(input));
@@ -35,12 +36,17 @@ void main(std::vector<MappedFile>&& mapped_files, LinkerArgs& flags) {
   auto input_files = process_input<E>(mapped_files);
   auto output_file = weld::OutputFile<E>();
 
-  Context<E> ctx{.thread_pool =
-                     ThreadPool(12), // FIXME: detect max threads size
-                 .tasks = Tasks(ctx.thread_pool)};
+  Context<E> ctx{
+      .is_relocatable = flags.is_relocatable,
+      .thread_pool = ThreadPool(flags.num_threads),
+      .tasks = Tasks(ctx.thread_pool),
+  };
 
   for (auto& file : input_files) {
     file->resolve_symbols(ctx);
+  }
+
+  for (auto& file : input_files) {
     file->merge_sections(ctx);
   }
 
@@ -53,8 +59,17 @@ void main(std::vector<MappedFile>&& mapped_files, LinkerArgs& flags) {
 std::vector<weld::MappedFile>
 open_input(const std::vector<std::filesystem::path>& paths) {
   std::vector<weld::MappedFile> result;
-  for (const auto& path : paths)
+  for (const auto& path : paths) {
+    if (!std::filesystem::exists(path)) {
+      weld::Fatal() << "file not found: " << path << '\n';
+    }
     result.push_back(weld::MappedFile::open(path));
+  }
+
+  if (result.empty()) {
+    weld::Fatal() << "no input files\n";
+  }
+
   return result;
 }
 
@@ -66,8 +81,12 @@ int main(int argc, char** argv) {
       std::find_if(mapped_files.begin(), mapped_files.end(), [](auto& mapped) {
         return weld::elf::is_elf(mapped.data());
       });
+
+  if (first_elf == mapped_files.end()) {
+    weld::Fatal() << "no ELF files found in input\n";
+  }
+
   auto arch = flags->arch.value_or(weld::elf::get_arch_tag(first_elf->data()));
-  assert(first_elf != mapped_files.end());
 
   switch (arch) {
   case weld::arch::Tag::i386:
@@ -77,6 +96,8 @@ int main(int argc, char** argv) {
     weld::main<weld::arch::x86_64>(std::move(mapped_files), *flags);
     break;
   case weld::arch::Tag::unsupported:
-    weld::Fatal() << *first_elf << " unsupported architecture";
+    weld::Fatal() << *first_elf << " unsupported architecture\n";
   }
+
+  return 0;
 }

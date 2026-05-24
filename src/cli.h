@@ -10,7 +10,7 @@ struct LinkerArgs {
   std::filesystem::path output_path;
   std::optional<weld::arch::Tag> arch;
 
-  bool relocatable;
+  bool is_relocatable;
   bool export_dynamic;
   bool pie;
   bool whole_archive;

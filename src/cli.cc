@@ -18,7 +18,7 @@ void LinkerArgs::print() {
   std::println("arch = {}", [this] {
     return arch ? std::format("{}", arch.value()) : "None";
   }());
-  std::println("relocatable = {}", relocatable);
+  std::println("relocatable = {}", is_relocatable);
   std::println("export_dynamic = {}", export_dynamic);
   std::println("pie = {}", pie);
   std::println("whole_archive = {}", whole_archive);
@@ -56,7 +56,7 @@ std::unique_ptr<LinkerArgs> parse_cli_options(int argc, char* argv[]) {
   auto lf = std::make_unique<LinkerArgs>();
 
   lf->export_dynamic = result["export-dynamic"].as<bool>();
-  lf->relocatable = result["relocatable"].as<bool>();
+  lf->is_relocatable = result["relocatable"].as<bool>();
 
   if (auto arch_opt = result["target"].as_optional<std::string>()) {
     auto arch_name = arch_opt.value();
