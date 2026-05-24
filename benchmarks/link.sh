@@ -7,13 +7,13 @@ MODE="${1:-}"
 THREADS="${2:-1}"
 
 if [ -z "$MODE" ]; then
-    echo "Usage: $0 {mold|ld} [threads]"
+    echo "Usage: $0 {weld|mold|ld} [threads]"
     exit 1
 fi
 
 case "$MODE" in
-    mold|ld) ;;
-    *) echo "Unknown mode: $MODE (use mold or ld)"; exit 1 ;;
+    weld|mold|ld) ;;
+    *) echo "Unknown mode: $MODE (use weld or mold or ld)"; exit 1 ;;
 esac
 
 source "$SCRIPT_DIR/crt-paths.sh"
@@ -48,6 +48,11 @@ LIBS_FILE="$SCRIPT_DIR/libs.rsp"
 OUT_FILE="$SCRIPT_DIR/nginx.${MODE}.${THREADS}t"
 
 case "$MODE" in
+    weld)
+        OBJ_FILES=$(cat "$RESP_FILE" 2>/dev/null)
+        LIB_FILES=$(cat "$LIBS_FILE" 2>/dev/null)
+        cmd=(../builddir/weld "--threads=${THREADS}" -o "$OUT_FILE" $OBJ_FILES $LIB_FILES $LIB_FILES)
+        ;;
     mold)
         cmd=(mold -static "--threads=${THREADS}" -o "$OUT_FILE" "@$RESP_FILE" "--start-group" "@$LIBS_FILE" "--end-group")
         ;;

@@ -21,6 +21,10 @@ for t in "${THREAD_COUNTS[@]}"; do
     HYPERFINE_CMD+=(-n "mold-${t}t" "./link.sh mold ${t}; rm -f nginx.mold.${t}t")
 done
 
+for t in "${THREAD_COUNTS[@]}"; do
+    HYPERFINE_CMD+=(-n "weld-${t}t" "./link.sh weld ${t}; rm -f nginx.weld.${t}t")
+done
+
 HYPERFINE_CMD+=(-n "ld" "./link.sh ld 1; rm -f nginx.ld.1t")
 HYPERFINE_CMD+=(--export-markdown "$SCRIPT_DIR/results.md")
 HYPERFINE_CMD+=(--export-json "$SCRIPT_DIR/results.json")
