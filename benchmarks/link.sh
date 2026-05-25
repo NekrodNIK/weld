@@ -51,7 +51,7 @@ case "$MODE" in
     weld)
         OBJ_FILES=$(cat "$RESP_FILE" 2>/dev/null)
         LIB_FILES=$(cat "$LIBS_FILE" 2>/dev/null)
-        cmd=(../builddir/weld "--threads=${THREADS}" -o "$OUT_FILE" $OBJ_FILES $LIB_FILES $LIB_FILES)
+        cmd=(../builddir/weld "--threads=${THREADS}" -o "$OUT_FILE" $OBJ_FILES $LIB_FILES)
         ;;
     mold)
         cmd=(mold -static "--threads=${THREADS}" -o "$OUT_FILE" "@$RESP_FILE" "--start-group" "@$LIBS_FILE" "--end-group")

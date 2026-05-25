@@ -17,9 +17,9 @@ echo ""
 echo "Running benchmarks..."
 HYPERFINE_CMD=(hyperfine --warmup 3)
 
-for t in "${THREAD_COUNTS[@]}"; do
-    HYPERFINE_CMD+=(-n "mold-${t}t" "./link.sh mold ${t}; rm -f nginx.mold.${t}t")
-done
+# for t in "${THREAD_COUNTS[@]}"; do
+#     HYPERFINE_CMD+=(-n "mold-${t}t" "./link.sh mold ${t}; rm -f nginx.mold.${t}t")
+# done
 
 for t in "${THREAD_COUNTS[@]}"; do
     HYPERFINE_CMD+=(-n "weld-${t}t" "./link.sh weld ${t}; rm -f nginx.weld.${t}t")

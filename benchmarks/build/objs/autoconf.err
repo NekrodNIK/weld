@@ -5,7 +5,7 @@ checking for C compiler
 
 
 ----------------------------------------
-checking for gcc -pipe switch
+checking for --with-ld-opt="-static -Wl,--gc-sections"
 
 
 ----------------------------------------
@@ -57,7 +57,7 @@ int main(void) {
 }
 
 ----------
-cc -o objs/autotest objs/autotest.c
+gcc -o objs/autotest objs/autotest.c
 ----------
 
 ----------------------------------------
@@ -169,7 +169,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -191,14 +191,14 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
 checking for crypt()
 
-/usr/bin/ld.bfd: /tmp/ccOyu3Uh.o: in function `main':
-autotest.c:(.text.startup+0xf): undefined reference to `crypt'
+/usr/bin/ld: /tmp/ccLlbrgF.o: in function `main':
+autotest.c:(.text.startup.main+0x10): undefined reference to `crypt'
 collect2: error: ld returned 1 exit status
 ----------
 
@@ -212,7 +212,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -239,7 +239,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -270,7 +270,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -297,7 +297,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -311,6 +311,9 @@ checking for statvfs()
 ----------------------------------------
 checking for dlopen()
 
+/usr/bin/ld: /tmp/cckEAyep.o: in function `main':
+autotest.c:(.text.startup.main+0x9): warning: Using 'dlopen' in statically linked applications requires at runtime the shared libraries from the glibc version used for linking
+/usr/bin/ld: /tmp/cckEAyep.o: note: the message above does not take linker garbage collection into account
 
 ----------------------------------------
 checking for sched_yield()
@@ -340,7 +343,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -368,7 +371,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -391,7 +394,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -419,7 +422,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -448,7 +451,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -472,7 +475,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -513,7 +516,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -631,7 +634,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -728,7 +731,7 @@ int main(void) {
 }
 
 ----------
-cc -fno-pie -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c
+gcc -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -o objs/autotest objs/autotest.c -static -Wl,--gc-sections
 ----------
 
 ----------------------------------------
@@ -750,3 +753,6 @@ checking for openat(), fstatat()
 ----------------------------------------
 checking for getaddrinfo()
 
+/usr/bin/ld: /tmp/ccm39pSt.o: in function `main':
+autotest.c:(.text.startup.main+0x27): warning: Using 'getaddrinfo' in statically linked applications requires at runtime the shared libraries from the glibc version used for linking
+/usr/bin/ld: /tmp/ccm39pSt.o: note: the message above does not take linker garbage collection into account

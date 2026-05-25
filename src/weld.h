@@ -2,6 +2,7 @@
 #include "elf.h"
 #include "ints.h"
 #include "mapped-file.h"
+#include "src/hashmap.h"
 #include "thread-pool.h"
 #include <cassert>
 #include <cstddef>
@@ -92,7 +93,7 @@ class ArchiveMember {
 template <typename E>
 class ArchiveFile : public InputFile<E> {
   std::vector<ArchiveMember> members;
-  std::vector<ObjectFile<E>> loaded_objs;
+  std::vector<std::unique_ptr<ObjectFile<E>>> loaded_objs;
 
 public:
   ArchiveFile(MappedFile&& mapped);
@@ -177,10 +178,10 @@ struct string_hash {
 template <typename E>
 class Context {
 public:
-  std::unordered_map<std::string, Symbol<E>, string_hash> symbol_map;
-  std::unordered_map<std::string, MergedSection<E>, string_hash> merged_sections;
+  LockFreeHashMap<std::string, Symbol<E>, string_hash> symbol_map;
+  LockFreeHashMap<std::string, MergedSection<E>, string_hash> merged_sections;
   std::vector<OutputSection<E>> output_sections;
-  std::unordered_map<std::string, size_t, string_hash> output_sec_ind;
+  LockFreeHashMap<std::string, size_t, string_hash> output_sec_ind;
   std::vector<Symbol<E>> local_symbols;
   
   bool is_relocatable = false;

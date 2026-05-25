@@ -19,17 +19,17 @@ protected:
 public:
   template <typename T>
   BaseError& operator<<(T&& val) {
-    out << std::forward<T>(val);
+    // out << std::forward<T>(val);
     return *this;
   };
   template <typename... Args>
   BaseError& print(std::format_string<Args...> fmt, Args&&... args) {
-    out << std::format(fmt, std::forward<Args>(args)...);
+    // out << std::format(fmt, std::forward<Args>(args)...);
     return *this;
   }
   template <typename... Args>
   BaseError& println(std::format_string<Args...> fmt, Args&&... args) {
-    out << std::format(fmt, std::forward<Args>(args)...) << '\n';
+    // out << std::format(fmt, std::forward<Args>(args)...) << '\n';
     return *this;
   }
 };
@@ -45,7 +45,9 @@ public:
 };
 class Warn : public BaseError {
 public:
-  Warn() : BaseError(std::cerr) { out << warn_message; };
+  Warn() : BaseError(std::cerr) {
+    // out << warn_message;
+  };
 };
 
 template <typename T>

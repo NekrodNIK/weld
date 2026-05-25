@@ -1,9 +1,4 @@
-#define NGX_CONFIGURE " --without-http_rewrite_module --without-http_gzip_module --without-pcre --with-cc-opt='-fno-pie -O2'"
-
-#ifndef NGX_COMPILER
-#define NGX_COMPILER  "gcc 16.1.1 20260501 (Red Hat 16.1.1-1) (GCC) "
-#endif
-
+#define NGX_CONFIGURE " --with-cc-opt='-Os -ffunction-sections -fdata-sections -Wa,-mrelax-relocations=no' --with-ld-opt='-static -Wl,--gc-sections' --without-pcre --without-http_rewrite_module --without-http_gzip_module --without-http_charset_module --without-http_ssi_module --without-http_userid_module --without-http_access_module --without-http_auth_basic_module --without-http_mirror_module --without-http_autoindex_module --without-http_geo_module --without-http_map_module --without-http_split_clients_module --without-http_referer_module --without-http_proxy_module --without-http_fastcgi_module --without-http_uwsgi_module --without-http_scgi_module --without-http_grpc_module --without-http_memcached_module --without-http_limit_conn_module --without-http_limit_req_module --without-http_empty_gif_module --without-http_browser_module --without-http_upstream_hash_module --without-http_upstream_ip_hash_module --without-http_upstream_least_conn_module --without-http_upstream_random_module --without-http_upstream_keepalive_module --without-http_upstream_zone_module --without-http-cache --without-mail_pop3_module --without-mail_imap_module --without-mail_smtp_module --without-stream_limit_conn_module --without-stream_access_module --without-stream_geo_module --without-stream_map_module --without-stream_split_clients_module --without-stream_return_module --without-stream_set_module --without-stream_upstream_hash_module --without-stream_upstream_least_conn_module --without-stream_upstream_random_module --without-stream_upstream_zone_module --without-select_module --error-log-path=stderr --pid-path=/dev/null --lock-path=/dev/null"
 
 #ifndef NGX_HAVE_GCC_ATOMIC
 #define NGX_HAVE_GCC_ATOMIC  1
@@ -388,36 +383,6 @@
 #endif
 
 
-#ifndef NGX_HTTP_CACHE
-#define NGX_HTTP_CACHE  1
-#endif
-
-
-#ifndef NGX_HTTP_SSI
-#define NGX_HTTP_SSI  1
-#endif
-
-
-#ifndef NGX_CRYPT
-#define NGX_CRYPT  1
-#endif
-
-
-#ifndef NGX_HTTP_X_FORWARDED_FOR
-#define NGX_HTTP_X_FORWARDED_FOR  1
-#endif
-
-
-#ifndef NGX_HTTP_X_FORWARDED_FOR
-#define NGX_HTTP_X_FORWARDED_FOR  1
-#endif
-
-
-#ifndef NGX_HTTP_UPSTREAM_ZONE
-#define NGX_HTTP_UPSTREAM_ZONE  1
-#endif
-
-
 #ifndef NGX_PREFIX
 #define NGX_PREFIX  "/usr/local/nginx/"
 #endif
@@ -439,17 +404,22 @@
 
 
 #ifndef NGX_PID_PATH
-#define NGX_PID_PATH  "logs/nginx.pid"
+#define NGX_PID_PATH  "/dev/null"
 #endif
 
 
 #ifndef NGX_LOCK_PATH
-#define NGX_LOCK_PATH  "logs/nginx.lock"
+#define NGX_LOCK_PATH  "/dev/null"
 #endif
 
 
 #ifndef NGX_ERROR_LOG_PATH
-#define NGX_ERROR_LOG_PATH  "logs/error.log"
+#define NGX_ERROR_LOG_PATH  ""
+#endif
+
+
+#ifndef NGX_ERROR_LOG_STDERR
+#define NGX_ERROR_LOG_STDERR  1
 #endif
 
 
@@ -499,6 +469,6 @@
 
 
 #ifndef NGX_GROUP
-#define NGX_GROUP  "nobody"
+#define NGX_GROUP  "nogroup"
 #endif
 

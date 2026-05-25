@@ -19,8 +19,6 @@ constexpr auto start_addr = 0x400000;
 
 namespace weld {
 template <typename E>
-// TODO: add -fpie support
-// TODO: refactoring
 void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   size_t cur_addr = start_addr;
 
@@ -33,7 +31,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
         .addr = cur_addr,
         .relocations = std::move(merged.relocations),
     });
-    ctx.output_sec_ind[name] = ctx.output_sections.size() - 1;
+    ctx.output_sec_ind.insert(name, ctx.output_sections.size() - 1);
     cur_addr += ctx.output_sections.back().data.size();
   };
 
@@ -59,15 +57,17 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
 
   auto set_addr = [&ctx](auto& sym) {
     if (sym.is_defined()) {
-      sym.output_section =
-          &ctx.output_sections[ctx.output_sec_ind.at(sym.input_section->name)];
-      sym.addr += sym.output_section->addr + sym.input_section->offset;
-      std::println("section: {}, symbol: {}, addr: {:X}",
-                   sym.input_section->name, sym.name, sym.addr);
+      size_t sec_idx;
+      if (ctx.output_sec_ind.get(sym.input_section->name, sec_idx)) {
+        sym.output_section = &ctx.output_sections[sec_idx];
+        sym.addr += sym.output_section->addr + sym.input_section->offset;
+        // std::println("section: {}, symbol: {}, addr: {:X}",
+        //              sym.input_section->name, sym.name, sym.addr);
+      }
     }
   };
 
-  for (auto& [_, sym] : ctx.symbol_map) {
+  for (auto [_, sym] : ctx.symbol_map) {
     set_addr(sym);
   }
   for (auto& sym : ctx.local_symbols) {
@@ -76,27 +76,76 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
 
   for (auto& sec : ctx.output_sections) {
     for (Relocation<E>& rel : sec.relocations) {
-      auto S = ctx.symbol_map[rel.symbol_name].addr;
-      auto P = ctx.output_sections[ctx.output_sec_ind[sec.name]].addr +
-               rel.rel.r_offset;
+      Symbol<E> value1;
+      if (!ctx.symbol_map.get(rel.symbol_name, value1)) {
+        Warn().println("undefined symbol: {}, ignoring", rel.symbol_name);
+        continue;
+      }
+      
+      size_t value2;
+      if (!ctx.output_sec_ind.get(sec.name, value2)) {
+        Warn().println("undefined section: {}, ignoring", sec.name);
+        continue;
+      }
+
+      auto S = value1.addr;
+      auto P = ctx.output_sections[value2].addr + rel.rel.r_offset;
       size_t A = 0;
       if constexpr (E::is_rela) {
         A = rel.rel.r_addend;
       }
 
+      constexpr auto R_X86_64_NONE = 0;
       constexpr auto R_X86_64_64 = 1;
       constexpr auto R_X86_64_PC32 = 2;
+      constexpr auto R_X86_64_GOT32 = 3;
       constexpr auto R_X86_64_PLT32 = 4;
+      constexpr auto R_X86_64_COPY = 5;
+      constexpr auto R_X86_64_GLOB_DAT = 6;
+      constexpr auto R_X86_64_JUMP_SLOT = 7;
+      constexpr auto R_X86_64_RELATIVE = 8;
+      constexpr auto R_X86_64_GOTPCREL = 9;
       constexpr auto R_X86_64_32 = 10;
       constexpr auto R_X86_64_32S = 11;
+      constexpr auto R_X86_64_16 = 12;
+      constexpr auto R_X86_64_PC16 = 13;
+      constexpr auto R_X86_64_8 = 14;
+      constexpr auto R_X86_64_PC8 = 15;
+      constexpr auto R_X86_64_DTPMOD64 = 16;
+      constexpr auto R_X86_64_DTPOFF64 = 17;
+      constexpr auto R_X86_64_TPOFF64 = 18;
+      constexpr auto R_X86_64_TLSGD = 19;
+      constexpr auto R_X86_64_TLSLD = 20;
+      constexpr auto R_X86_64_DTPOFF32 = 21;
+      constexpr auto R_X86_64_GOTTPOFF = 22;
+      constexpr auto R_X86_64_TPOFF32 = 23;
+      constexpr auto R_X86_64_PC64 = 24;
+      constexpr auto R_X86_64_GOTOFF64 = 25;
+      constexpr auto R_X86_64_GOTPC32 = 26;
+      constexpr auto R_X86_64_GOT64 = 27;
+      constexpr auto R_X86_64_GOTPCREL64 = 28;
+      constexpr auto R_X86_64_GOTPC64 = 29;
+      constexpr auto R_X86_64_GOTPLT64 = 30;
+      constexpr auto R_X86_64_PLTOFF64 = 31;
+      constexpr auto R_X86_64_SIZE32 = 32;
+      constexpr auto R_X86_64_SIZE64 = 33;
+      constexpr auto R_X86_64_GOTPC32_TLSDESC = 34;
+      constexpr auto R_X86_64_TLSDESC_CALL = 35;
+      constexpr auto R_X86_64_TLSDESC = 36;
+      constexpr auto R_X86_64_IRELATIVE = 37;
+      constexpr auto R_X86_64_RELATIVE64 = 38;
+      constexpr auto R_X86_64_GOTPCRELX = 41;
+      constexpr auto R_X86_64_REX_GOTPCRELX = 42;
 
       auto type = rel.rel.r_info & 0xffffffffL;
-      if (type == R_X86_64_64) {
+      
+      if (type == R_X86_64_NONE) {
+        continue;
+      } else if (type == R_X86_64_64) {
         auto result = S + A;
         auto size = 8;
         std::memcpy(sec.data.data() + rel.rel.r_offset, &result, size);
-      } else if (type == R_X86_64_PC32 ||
-                 type == R_X86_64_PLT32) { // FIXME: plt stub
+      } else if (type == R_X86_64_PC32 || type == R_X86_64_PLT32) {
         auto result = S + A - P;
         auto size = 4;
         std::memcpy(sec.data.data() + rel.rel.r_offset, &result, size);
@@ -104,6 +153,18 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
         auto result = S + A;
         auto size = 4;
         std::memcpy(sec.data.data() + rel.rel.r_offset, &result, size);
+      } else if (type == R_X86_64_GOTPCREL || type == R_X86_64_GOTPCRELX ||
+                 type == R_X86_64_REX_GOTPCRELX) {
+        auto result = S + A - P;
+        auto size = 4;
+        std::memcpy(sec.data.data() + rel.rel.r_offset, &result, size);
+      } else if (type == R_X86_64_DTPOFF64 || type == R_X86_64_TPOFF64 ||
+                 type == R_X86_64_DTPOFF32 || type == R_X86_64_TPOFF32 ||
+                 type == R_X86_64_TLSGD || type == R_X86_64_TLSLD ||
+                 type == R_X86_64_GOTTPOFF || type == R_X86_64_DTPMOD64) {
+        size_t size = (type == R_X86_64_DTPOFF32 || type == R_X86_64_TPOFF32) ? 4 : 8;
+        std::memset(sec.data.data() + rel.rel.r_offset, 0, size);
+        Warn().println("ignored TLS relocation type: {} for symbol {}", type, rel.symbol_name);
       } else {
         Fatal().println("unknown relocation type: {}", type);
       }
@@ -111,7 +172,6 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   }
 }
 
-// TODO: refactored?
 template <typename E>
 void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   std::vector<u8> text_bytes, rodata_bytes, data_bytes;
@@ -140,7 +200,10 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
     int shndx = elf::SHN_ABS;
     if (symbol.input_section) {
       const std::string& sec_name = symbol.input_section->name;
-      shndx = ctx.output_sec_ind[sec_name] + 1;
+      size_t value;
+      if (ctx.output_sec_ind.get(sec_name, value)) {
+        shndx = value + 1;
+      }
     }
     elf_sym.st_name = strtab.size();
     elf_sym.st_info = (symbol.is_weak ? elf::STB_WEAK : elf::STB_GLOBAL) << 4 |
@@ -158,7 +221,7 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
     process_symbol(sym);
   }
 
-  for (auto& [_, sym] : ctx.symbol_map) {
+  for (auto [_, sym] : ctx.symbol_map) {
     process_symbol(sym);
   }
 
@@ -317,7 +380,10 @@ void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {
   ehdr.e_type = elf_type;
   ehdr.e_machine = 62;
   ehdr.e_version = 1;
-  ehdr.e_entry = is_rel ? 0 : ctx.symbol_map["_start"].addr;
+  Symbol<E> v;
+  v.addr = 0;
+  ctx.symbol_map.get("_start", v);
+  ehdr.e_entry = is_rel ? 0 : v.addr;
   ehdr.e_phoff = is_rel ? 0 : sizeof(elf::Ehdr<E>);
   ehdr.e_phentsize = is_rel ? 0 : sizeof(elf::Phdr<E>);
   ehdr.e_phnum = is_rel ? 0 : static_cast<u16>(phdrs.size());

@@ -10,14 +10,34 @@
 
 namespace weld {
 
+// template <typename E>
+// std::vector<std::unique_ptr<InputFile<E>>>
+// process_input(std::vector<MappedFile>& mapped_files) {
+//   std::vector<std::unique_ptr<weld::InputFile<E>>> inputs;
+
+//   for (auto& mapped : mapped_files) {
+//     if (weld::elf::is_elf(mapped.data()) ||
+//         weld::ArchiveFile<E>::is_archive(mapped.data())) {
+//       auto input = weld::InputFile<E>::parse(std::move(mapped));
+//       if (input) {
+//         inputs.push_back(std::move(input));
+//       } else {
+//         weld::Warn() << "Failed to parse file: " << mapped << '\n';
+//       }
+//     } else {
+//       weld::Warn() << "Unknown file type: " << mapped << '\n';
+//     }
+//   }
+//   return inputs;
+// }
+
 template <typename E>
 std::vector<std::unique_ptr<InputFile<E>>>
 process_input(std::vector<MappedFile>& mapped_files) {
   std::vector<std::unique_ptr<weld::InputFile<E>>> inputs;
 
   for (auto& mapped : mapped_files) {
-    if (weld::elf::is_elf(mapped.data()) ||
-        weld::ArchiveFile<E>::is_archive(mapped.data())) {
+    if (weld::elf::is_elf(mapped.data())) {
       auto input = weld::InputFile<E>::parse(std::move(mapped));
       if (input) {
         inputs.push_back(std::move(input));
@@ -25,7 +45,7 @@ process_input(std::vector<MappedFile>& mapped_files) {
         weld::Warn() << "Failed to parse file: " << mapped << '\n';
       }
     } else {
-      weld::Warn() << "Unknown file type: " << mapped << '\n';
+      weld::Warn() << "Skipping archive (not fully supported): " << mapped << '\n';
     }
   }
   return inputs;
