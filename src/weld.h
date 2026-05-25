@@ -1,16 +1,18 @@
 #pragma once
+#include "elf.h"
 #include "ints.h"
+#include "mapped-file.h"
+#include "src/hashmap.h"
+#include "thread-pool.h"
 #include <cassert>
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-#include "mapped-file.h"
-#include "elf.h"
-#include "hashmap.h"
 
 namespace weld {
 template <typename E>
@@ -21,6 +23,9 @@ template <typename E>
 class ObjectFile;
 template <typename E>
 class SharedObjectFile;
+class ArchiveMember;
+template <typename E>
+class ArchiveFile;
 template <typename E>
 class InputSection;
 template <typename E>
@@ -41,7 +46,10 @@ protected:
   InputFile(MappedFile&& mapped);
 
 public:
+  InputFile(InputFile&&) = default;
+  InputFile& operator=(InputFile&&) = default;
   virtual ~InputFile() = default;
+
   static std::unique_ptr<InputFile> parse(MappedFile&& mapped);
   std::string_view filename() const { return mapped_.filename(); }
   virtual void resolve_symbols(Context<E>& ctx) = 0;
@@ -61,6 +69,7 @@ public:
   ObjectFile(MappedFile&& mapped);
   void resolve_symbols(Context<E>& ctx) override;
   void merge_sections(Context<E>& ctx) override;
+  bool has_non_local(std::string_view name);
 };
 
 template <typename E>
@@ -71,15 +80,41 @@ public:
   void merge_sections(Context<E>& ctx) override;
 };
 
+class ArchiveMember {
+  std::string_view name_;
+  std::span<u8> mem_;
+  public:
+    static std::optional<ArchiveMember> parse(std::span<u8> mem);
+    std::string_view name() const;
+    std::span<u8> mem() const;
+    size_t total_size() const;
+};
+
+template <typename E>
+class ArchiveFile : public InputFile<E> {
+  std::vector<ArchiveMember> members;
+  std::vector<std::unique_ptr<ObjectFile<E>>> loaded_objs;
+
+public:
+  ArchiveFile(MappedFile&& mapped);
+  void resolve_symbols(Context<E>& ctx) override;
+  void merge_sections(Context<E>& ctx) override;
+  static bool is_archive(std::span<u8> mem);
+};
+
 template <typename E>
 class InputSection {
 public:
   std::string name;
   std::span<u8> data;
-  std::span<elf::Rela<E>> rela_tab;
-  std::span<elf::Rel<E>> rel_tab; // TODO: implement it
+  std::span<elf::Rel<E>> rel_tab;
   size_t offset;
   size_t align;
+
+  void scan_relocations(Context<E>& ctx);
+  void apply_reloc_alloc(Context<E>& ctx);
+  void apply_reloc_nonalloc(Context<E>& ctx);
+  void write_to(Context<E>& ctx, std::span<u8> buf);
 };
 
 template <typename E>
@@ -108,13 +143,13 @@ public:
   OutputSection<E>* output_section;
   bool is_weak;
   size_t addr;
-  bool is_defined() { return input_section; }
+  bool is_defined() const { return input_section; }
 };
 
 template <typename E>
 class Relocation {
 public:
-  elf::Rela<E> rela;
+  elf::Rel<E> rel;
   std::string symbol_name;
 };
 
@@ -143,14 +178,19 @@ struct string_hash {
 template <typename E>
 class Context {
 public:
-  LockFreeHashMap<std::string, Symbol<E>> symbol_map;
-  LockFreeHashMap<std::string, MergedSection<E>> merged_sections;
+  LockFreeHashMap<std::string, Symbol<E>, string_hash> symbol_map;
+  LockFreeHashMap<std::string, MergedSection<E>, string_hash> merged_sections;
   std::vector<OutputSection<E>> output_sections;
-  LockFreeHashMap<std::string, size_t> output_sec_ind;
+  LockFreeHashMap<std::string, size_t, string_hash> output_sec_ind;
   std::vector<Symbol<E>> local_symbols;
-
-  Context() : symbol_map(1024), merged_sections(128), output_sec_ind(64) {}
+  
+  bool is_relocatable = false;
+  size_t start_addr = 0x400000;
+  
+  ThreadPool thread_pool;
+  Tasks tasks;
 };
+
 template <typename T, typename V>
 auto align_addr(const T& addr, const V& align) {
   if (align <= 1) return addr;

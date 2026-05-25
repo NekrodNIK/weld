@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <format>
+#include <span>
 #include <string>
 
 namespace weld {
@@ -18,7 +19,9 @@ class MappedFile {
 
 public:
   static MappedFile open(const std::filesystem::path& path);
+  static MappedFile from_span(std::span<u8> span, bool owns = false, std::string filename = "");
   MappedFile slice(size_t offset, size_t size) const;
+  MappedFile slice(size_t offset) const;
 
   MappedFile(const MappedFile&) = delete;
   MappedFile& operator=(const MappedFile&) = delete;

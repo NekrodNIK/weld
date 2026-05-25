@@ -4,6 +4,7 @@
 #include "weld.h"
 #include <cassert>
 #include <cstring>
+#include <iostream>
 #include <memory>
 #include <ostream>
 #include <span>
@@ -17,14 +18,18 @@ InputFile<E>::InputFile(MappedFile&& mapped) : mapped_(std::move(mapped)) {}
 
 template <typename E>
 std::unique_ptr<InputFile<E>> InputFile<E>::parse(MappedFile&& mapped) {
+  if (ArchiveFile<E>::is_archive(mapped.data())) {
+    return std::make_unique<ArchiveFile<E>>(std::move(mapped));
+  }
+
   if (!elf::is_elf(mapped.data())) {
     Fatal().println("[{}] file is not elf", mapped);
   }
 
-  auto file_arch = elf::get_arch(mapped.data());
-  if (file_arch != arch::get_enum<E>()) {
+  auto file_arch = elf::get_arch_tag(mapped.data());
+  if (file_arch != E::tag) {
     Fatal().println("[{}] the architecture {} expected but {}", mapped,
-                    file_arch, arch::get_enum<E>());
+                    file_arch, E::tag);
   }
 
   auto type = reinterpret_cast<elf::Ehdr<E>*>(mapped.raw())->e_type;
@@ -75,6 +80,11 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
     if (shdr.sh_type == elf::SHT_PROGBITS) {
       name = shstrtab_ + shdr.sh_name;
     } else if (shdr.sh_type == elf::SHT_RELA) {
+      if (shdr.sh_info >= shdr_tab_.size()) {
+        Warn().println("invalid sh_info {} for RELA section {} in {}",
+                       shdr.sh_info, shdr.sh_name, *this);
+        continue;
+      }
       name = shstrtab_ + shdr_tab_[shdr.sh_info].sh_name;
     } else {
       continue;
@@ -90,7 +100,7 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
           std::span<u8>(this->mapped_.raw() + shdr.sh_offset, shdr.sh_size);
       section.align = shdr.sh_addralign;
     } else if (shdr.sh_type == elf::SHT_RELA) {
-      section.rela_tab = elf::get_rela_tab(this->mapped_.data(), shdr);
+      section.rel_tab = elf::get_rel_tab(this->mapped_.data(), shdr);
     } else {
       continue;
     }
@@ -99,66 +109,100 @@ ObjectFile<E>::ObjectFile(MappedFile&& mapped)
 
 template <typename E>
 void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
+  constexpr uint16_t SHN_LORESERVE = 0xff00;
+  
   for (elf::Sym<E>& elf_struct : non_local_symtab_) {
-    auto name = strtab_ + elf_struct.st_name;
-
-    if (elf_struct.st_shndx >= shdr_tab_.size()) {
-      Warn().println("Invalid section index: {}: {}", *this, name);
-      continue;
+    const char* name_ptr = strtab_ + elf_struct.st_name;
+    std::string name(name_ptr);
+    
+    InputSection<E>* input_section = nullptr;
+    
+    if (elf_struct.st_shndx == elf::SHN_UNDEF) {
+        input_section = nullptr;
+    } else if (elf_struct.st_shndx < shdr_tab_.size()) {
+        size_t idx = elf_struct.st_shndx;
+        const char* sec_name = shstrtab_ + shdr_tab_[idx].sh_name;
+        auto it = sections_.find(sec_name);
+        if (it != sections_.end()) {
+            input_section = &it->second;
+        } else {
+            input_section = nullptr;
+        }
+    } else if (elf_struct.st_shndx >= SHN_LORESERVE) {
+        input_section = nullptr;
+    } else {
+        continue;
     }
-    auto input_section =
-        elf_struct.st_shndx != elf::SHN_UNDEF
-            ? &sections_[shstrtab_ + shdr_tab_[elf_struct.st_shndx].sh_name]
-            : nullptr;
-    auto new_symbol =
-        Symbol<E>{.name = name,
-                  .input_section = input_section,
-                  .output_section = nullptr,
-                  .is_weak = (elf_struct.st_bind() == elf::STB_WEAK ||
-                              elf_struct.st_bind() == elf::STB_GNU_UNIQUE),
-                  .addr = elf_struct.st_value};
-    if (!ctx.symbol_map.contains(name) || !ctx.symbol_map.at(name).is_defined()) {
-      ctx.symbol_map.insert(name, new_symbol);
-      continue;
+    
+    Symbol<E> new_symbol{
+        .name = name,
+        .input_section = input_section,
+        .output_section = nullptr,
+        .is_weak = (elf_struct.st_bind() == elf::STB_WEAK ||
+                    elf_struct.st_bind() == elf::STB_GNU_UNIQUE),
+        .addr = elf_struct.st_value
+    };
+    
+    Symbol<E> existing;
+    if (!ctx.symbol_map.get(name, existing) || !existing.is_defined()) {
+        ctx.symbol_map.insert(name, new_symbol);
+        continue;
     }
+    
     if (!new_symbol.is_defined()) {
-      continue;
+        continue;
     }
-
-    Symbol<E>& symbol = ctx.symbol_map.at(name);
-    if (symbol.is_weak && !new_symbol.is_weak) {
-      symbol = new_symbol;
-    } else if (!symbol.is_weak && new_symbol.is_weak) {
-      continue;
-    } else if (!symbol.is_weak && !new_symbol.is_weak) {
-      Fatal().println("duplicate symbol: {}: {}", *this, name);
+    
+    if (existing.is_weak && !new_symbol.is_weak) {
+        ctx.symbol_map.insert(name, new_symbol);
     }
   }
 
+  std::vector<std::future<void>> futures;
+  std::mutex local_mutex;
+
   for (elf::Sym<E>& elf_struct : local_symtab_) {
-    if (elf_struct.st_type() == elf::STT_FILE)
-      continue;
-    if (elf_struct.st_type() == elf::STT_SECTION)
-      continue;
-    if (elf_struct.st_name == 0)
-      continue;
-    auto name = strtab_ + elf_struct.st_name;
-    InputSection<E>* input_section;
-    if (elf_struct.st_shndx >= shdr_tab_.size()) {
-      input_section = &sections_[".text"]; // FIXME
-    } else {
-      input_section =
-          elf_struct.st_shndx != elf::SHN_UNDEF
-              ? &sections_[shstrtab_ + shdr_tab_[elf_struct.st_shndx].sh_name]
-              : nullptr;
-    }
-    ctx.local_symbols.push_back(
-        Symbol<E>{.name = name,
-                  .input_section = input_section,
-                  .output_section = nullptr,
-                  .is_weak = (elf_struct.st_bind() == elf::STB_WEAK ||
-                              elf_struct.st_bind() == elf::STB_GNU_UNIQUE),
-                  .addr = elf_struct.st_value});
+    if (elf_struct.st_type() == elf::STT_FILE) continue;
+    if (elf_struct.st_type() == elf::STT_SECTION) continue;
+    if (elf_struct.st_name == 0) continue;
+    
+    futures.push_back(ctx.thread_pool.submit([&, elf_struct]() {
+      const char* name_ptr = strtab_ + elf_struct.st_name;
+      std::string name(name_ptr);
+      
+      InputSection<E>* input_section = nullptr;
+      
+      if (elf_struct.st_shndx == elf::SHN_UNDEF) {
+        input_section = nullptr;
+      } else if (elf_struct.st_shndx < shdr_tab_.size()) {
+        size_t idx = elf_struct.st_shndx;
+        const char* sec_name = shstrtab_ + shdr_tab_[idx].sh_name;
+        auto it = sections_.find(sec_name);
+        if (it != sections_.end()) {
+          input_section = &it->second;
+        } else {
+          input_section = nullptr;
+        }
+      } else if (elf_struct.st_shndx >= SHN_LORESERVE) {
+        input_section = nullptr;
+      } else {
+        return;
+      }
+      
+      std::lock_guard<std::mutex> lock(local_mutex);
+      ctx.local_symbols.push_back(Symbol<E>{
+        .name = name,
+        .input_section = input_section,
+        .output_section = nullptr,
+        .is_weak = (elf_struct.st_bind() == elf::STB_WEAK ||
+                    elf_struct.st_bind() == elf::STB_GNU_UNIQUE),
+        .addr = elf_struct.st_value
+      });
+    }));
+  }
+  
+  for (auto& f : futures) {
+    f.get();
   }
 }
 
@@ -174,8 +218,14 @@ void ObjectFile<E>::merge_sections(Context<E>& ctx) {
     input.offset = merged.data.size();
     merged.data.insert(merged.data.end(), input.data.begin(), input.data.end());
 
-    for (elf::Rela<E> rela : input.rela_tab) {
-      auto ind = rela.r_sym();
+    for (elf::Rel<E> rel : input.rel_tab) {
+      auto ind = rel.r_sym();
+
+      if (ind >= local_symtab_.size() + non_local_symtab_.size()) {
+        Warn().println("invalid symbol index {} in relocation", ind);
+        continue;
+      }
+
       auto& elf_struct = ind < local_symtab_.size()
                              ? local_symtab_[ind]
                              : non_local_symtab_[ind - local_symtab_.size()];
@@ -187,9 +237,9 @@ void ObjectFile<E>::merge_sections(Context<E>& ctx) {
         symbol_name = strtab_ + elf_struct.st_name;
       }
 
-      rela.r_offset += input.offset;
+      rel.r_offset += input.offset;
       merged.relocations.push_back({
-          .rela = rela,
+          .rel = rel,
           .symbol_name = symbol_name,
       });
     }
@@ -198,6 +248,16 @@ void ObjectFile<E>::merge_sections(Context<E>& ctx) {
       merged.align = input.align;
     }
   }
+}
+
+template <typename E>
+bool ObjectFile<E>::has_non_local(std::string_view str) {
+  for (elf::Sym<E>& elf_struct : non_local_symtab_) {
+    auto name = strtab_ + elf_struct.st_name;
+    if (std::string_view(name) == str)
+      return true;
+  }
+  return false;
 }
 
 template <typename E>

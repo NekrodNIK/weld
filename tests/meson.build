@@ -1,16 +1,20 @@
-tests = ['hashmap-test.cc', 'thread-pool-test.cc']
-unix_tests = []
+incdirs = get_variable('incdirs')
+weld_lib = get_variable('weld_lib')
 
-if target_machine.system() == 'windows' 
-  error('Windows is not supported')
-else
-  srcs += unix_tests
-endif
+tests = {
+  'hashmap-test': ['hashmap-test.cc'],
+  'thread-pool-test': ['thread-pool-test.cc'],
+}
 
 gtest_dep = dependency('gtest', main : true)
-test_exe = executable(
-  'tests',
-  tests,
-  dependencies : [gtest_dep]
-)
-test('gtest test', test_exe, timeout : 120)
+
+foreach name, srcs : tests 
+  test_exe = executable(
+    name,
+    srcs,
+    dependencies : [gtest_dep],
+    build_by_default : false,
+    include_directories : incdirs
+  )
+  test(name, test_exe)
+endforeach

@@ -1,15 +1,15 @@
 #include "arch.h"
 
 namespace weld::arch {
-std::ostream& operator<<(std::ostream& out, Enum arch) {
+std::ostream& operator<<(std::ostream& out, Tag arch) {
   switch (arch) {
-  case Enum::i386:
+  case Tag::i386:
     out << i386::name;
     break;
-  case Enum::x86_64:
+  case Tag::x86_64:
     out << x86_64::name;
     break;
-  case Enum::unsupported:
+  case Tag::unsupported:
     out << "unsupported";
   }
   return out;

@@ -16,19 +16,19 @@ bool is_elf(std::span<const u8> mem) {
          (mem[EI_MAG2] == 'L') && (mem[EI_MAG3] == 'F');
 }
 
-arch::Enum get_arch(std::span<const u8> mem) {
+arch::Tag get_arch_tag(std::span<const u8> mem) {
   if (mem.size() < EI_IDENT + 4) {
-    return arch::Enum::unsupported;
+    return arch::Tag::unsupported;
   }
 
   u16 e_machine = *(u16*)(mem.data() + EI_IDENT + 2);
   switch (e_machine) {
   case EM_386:
-    return arch::Enum::i386;
+    return arch::Tag::i386;
   case EM_X86_64:
-    return arch::Enum::x86_64;
+    return arch::Tag::x86_64;
   default:
-    return arch::Enum::unsupported;
+    return arch::Tag::unsupported;
   }
 }
 
@@ -102,10 +102,9 @@ char* get_shstrtab(std::span<u8> file) {
 }
 
 template <typename E>
-std::span<Rela<E>> get_rela_tab(std::span<u8> file, Shdr<E>& shdr) {
-  return std::span(
-      reinterpret_cast<elf::Rela<E>*>(file.data() + shdr.sh_offset),
-      shdr.sh_size / sizeof(elf::Rela<E>));
+std::span<Rel<E>> get_rel_tab(std::span<u8> file, Shdr<E>& shdr) {
+  return std::span(reinterpret_cast<elf::Rel<E>*>(file.data() + shdr.sh_offset),
+                   shdr.sh_size / sizeof(elf::Rel<E>));
 }
 
 template Ehdr<arch::i386>& get_ehdr(std::span<u8> file);
@@ -122,8 +121,8 @@ template char* get_strtab<arch::i386>(std::span<u8> file);
 template char* get_strtab<arch::x86_64>(std::span<u8> file);
 template char* get_shstrtab<arch::i386>(std::span<u8> file);
 template char* get_shstrtab<arch::x86_64>(std::span<u8> file);
-template std::span<Rela<arch::i386>> get_rela_tab(std::span<u8> file,
-                                                  Shdr<arch::i386>& shdr);
-template std::span<Rela<arch::x86_64>> get_rela_tab(std::span<u8> file,
-                                                    Shdr<arch::x86_64>& shdr);
+template std::span<Rel<arch::i386>> get_rel_tab(std::span<u8> file,
+                                                Shdr<arch::i386>& shdr);
+template std::span<Rel<arch::x86_64>> get_rel_tab(std::span<u8> file,
+                                                  Shdr<arch::x86_64>& shdr);
 } // namespace weld::elf
