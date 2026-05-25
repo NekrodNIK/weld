@@ -155,48 +155,54 @@ void ObjectFile<E>::resolve_symbols(Context<E>& ctx) {
     
     if (existing.is_weak && !new_symbol.is_weak) {
         ctx.symbol_map.insert(name, new_symbol);
-    } else if (!existing.is_weak && new_symbol.is_weak) {
-        continue;
-    } else if (!existing.is_weak && !new_symbol.is_weak) {
-        Warn().println("duplicate symbol: {}: {}", *this, name);
     }
   }
+
+  std::vector<std::future<void>> futures;
+  std::mutex local_mutex;
 
   for (elf::Sym<E>& elf_struct : local_symtab_) {
     if (elf_struct.st_type() == elf::STT_FILE) continue;
     if (elf_struct.st_type() == elf::STT_SECTION) continue;
     if (elf_struct.st_name == 0) continue;
     
-    const char* name_ptr = strtab_ + elf_struct.st_name;
-    std::string name(name_ptr);
-    
-    InputSection<E>* input_section = nullptr;
-    
-    if (elf_struct.st_shndx == elf::SHN_UNDEF) {
+    futures.push_back(ctx.thread_pool.submit([&, elf_struct]() {
+      const char* name_ptr = strtab_ + elf_struct.st_name;
+      std::string name(name_ptr);
+      
+      InputSection<E>* input_section = nullptr;
+      
+      if (elf_struct.st_shndx == elf::SHN_UNDEF) {
         input_section = nullptr;
-    } else if (elf_struct.st_shndx < shdr_tab_.size()) {
+      } else if (elf_struct.st_shndx < shdr_tab_.size()) {
         size_t idx = elf_struct.st_shndx;
         const char* sec_name = shstrtab_ + shdr_tab_[idx].sh_name;
         auto it = sections_.find(sec_name);
         if (it != sections_.end()) {
-            input_section = &it->second;
+          input_section = &it->second;
         } else {
-            input_section = nullptr;
+          input_section = nullptr;
         }
-    } else if (elf_struct.st_shndx >= SHN_LORESERVE) {
+      } else if (elf_struct.st_shndx >= SHN_LORESERVE) {
         input_section = nullptr;
-    } else {
-        continue;
-    }
-    
-    ctx.local_symbols.push_back(Symbol<E>{
+      } else {
+        return;
+      }
+      
+      std::lock_guard<std::mutex> lock(local_mutex);
+      ctx.local_symbols.push_back(Symbol<E>{
         .name = name,
         .input_section = input_section,
         .output_section = nullptr,
         .is_weak = (elf_struct.st_bind() == elf::STB_WEAK ||
                     elf_struct.st_bind() == elf::STB_GNU_UNIQUE),
         .addr = elf_struct.st_value
-    });
+      });
+    }));
+  }
+  
+  for (auto& f : futures) {
+    f.get();
   }
 }
 

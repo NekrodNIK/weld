@@ -10,57 +10,50 @@
 
 namespace weld {
 
-// template <typename E>
-// std::vector<std::unique_ptr<InputFile<E>>>
-// process_input(std::vector<MappedFile>& mapped_files) {
-//   std::vector<std::unique_ptr<weld::InputFile<E>>> inputs;
-
-//   for (auto& mapped : mapped_files) {
-//     if (weld::elf::is_elf(mapped.data()) ||
-//         weld::ArchiveFile<E>::is_archive(mapped.data())) {
-//       auto input = weld::InputFile<E>::parse(std::move(mapped));
-//       if (input) {
-//         inputs.push_back(std::move(input));
-//       } else {
-//         weld::Warn() << "Failed to parse file: " << mapped << '\n';
-//       }
-//     } else {
-//       weld::Warn() << "Unknown file type: " << mapped << '\n';
-//     }
-//   }
-//   return inputs;
-// }
-
 template <typename E>
 std::vector<std::unique_ptr<InputFile<E>>>
-process_input(std::vector<MappedFile>& mapped_files) {
-  std::vector<std::unique_ptr<weld::InputFile<E>>> inputs;
+process_input(std::vector<MappedFile>& mapped_files, ThreadPool& pool) {
+  std::vector<std::future<std::unique_ptr<InputFile<E>>>> futures;
+  std::vector<std::unique_ptr<InputFile<E>>> inputs;
+  std::mutex input_mutex;
 
   for (auto& mapped : mapped_files) {
-    if (weld::elf::is_elf(mapped.data())) {
-      auto input = weld::InputFile<E>::parse(std::move(mapped));
-      if (input) {
-        inputs.push_back(std::move(input));
+    futures.push_back(pool.submit([&mapped, &input_mutex]() -> std::unique_ptr<InputFile<E>> {
+      if (weld::elf::is_elf(mapped.data())) {
+        auto input = weld::InputFile<E>::parse(std::move(mapped));
+        if (!input) {
+          std::lock_guard<std::mutex> lock(input_mutex);
+          weld::Warn() << "Failed to parse file: " << mapped << '\n';
+        }
+        return input;
       } else {
-        weld::Warn() << "Failed to parse file: " << mapped << '\n';
+        std::lock_guard<std::mutex> lock(input_mutex);
+        weld::Warn() << "Skipping archive (not fully supported): " << mapped << '\n';
+        return nullptr;
       }
-    } else {
-      weld::Warn() << "Skipping archive (not fully supported): " << mapped << '\n';
+    }));
+  }
+
+  for (auto& f : futures) {
+    auto input = f.get();
+    if (input) {
+      inputs.push_back(std::move(input));
     }
   }
+
   return inputs;
 }
 
 template <typename E>
 void main(std::vector<MappedFile>&& mapped_files, LinkerArgs& flags) {
-  auto input_files = process_input<E>(mapped_files);
-  auto output_file = weld::OutputFile<E>();
-
   Context<E> ctx{
       .is_relocatable = flags.is_relocatable,
       .thread_pool = ThreadPool(flags.num_threads),
       .tasks = Tasks(ctx.thread_pool),
   };
+  
+  auto input_files = process_input<E>(mapped_files, ctx.thread_pool);
+  auto output_file = weld::OutputFile<E>();
 
   for (auto& file : input_files) {
     file->resolve_symbols(ctx);

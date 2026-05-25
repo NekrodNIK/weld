@@ -95,7 +95,6 @@ ArchiveFile<E>::ArchiveFile(MappedFile&& mapped)
 template <typename E>
 void ArchiveFile<E>::resolve_symbols(Context<E>& ctx) {
   std::vector<bool> loaded(members.size(), false);
-  std::vector<std::unique_ptr<ObjectFile<E>>> loaded_objs;
 
   bool changed = true;
   while (changed) {
