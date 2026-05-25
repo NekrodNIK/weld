@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <functional>
-#include <print>
 #include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -61,8 +60,6 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
       if (ctx.output_sec_ind.get(sym.input_section->name, sec_idx)) {
         sym.output_section = &ctx.output_sections[sec_idx];
         sym.addr += sym.output_section->addr + sym.input_section->offset;
-        // std::println("section: {}, symbol: {}, addr: {:X}",
-        //              sym.input_section->name, sym.name, sym.addr);
       }
     }
   };
@@ -75,11 +72,20 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
   }
 
   for (auto& sec : ctx.output_sections) {
+    std::unordered_map<std::string, Symbol<E>> local_cache;
+    
     for (Relocation<E>& rel : sec.relocations) {
       Symbol<E> value1;
-      if (!ctx.symbol_map.get(rel.symbol_name, value1)) {
-        Warn().println("undefined symbol: {}, ignoring", rel.symbol_name);
-        continue;
+      
+      auto it = local_cache.find(rel.symbol_name);
+      if (it != local_cache.end()) {
+        value1 = it->second;
+      } else {
+        if (!ctx.symbol_map.get(rel.symbol_name, value1)) {
+          Warn().println("undefined symbol: {}, ignoring", rel.symbol_name);
+          continue;
+        }
+        local_cache[rel.symbol_name] = value1;
       }
       
       size_t value2;
@@ -171,6 +177,7 @@ void OutputFile<E>::resolve_relocations(Context<E>& ctx) {
     }
   }
 }
+
 
 template <typename E>
 void OutputFile<E>::write(Context<E>& ctx, const std::filesystem::path& path) {

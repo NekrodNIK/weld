@@ -15,7 +15,7 @@ echo "Objects: $(wc -l < "$SCRIPT_DIR/objects.txt") .o files"
 echo ""
 
 echo "Running benchmarks..."
-HYPERFINE_CMD=(hyperfine --warmup 8)
+HYPERFINE_CMD=(hyperfine --warmup 5)
 
 # for t in "${THREAD_COUNTS[@]}"; do
 #     HYPERFINE_CMD+=(-n "mold-${t}t" "./link.sh mold ${t}; rm -f nginx.mold.${t}t")
