@@ -184,9 +184,7 @@ public:
     return node->value;
   }
 
-  bool contains(const auto& key) const {
-    return find_node(key);
-  }
+  bool contains(const auto& key) const { return find_node(key); }
 
   bool get(const auto& key, V& value) const {
     size_t index = bucket_index(key);
@@ -221,4 +219,90 @@ public:
   }
 
   size_t size() const { return capacity; }
+};
+
+template <typename K, typename V, typename Hash = std::hash<K>>
+class StandardUnorderedMap {
+private:
+  std::unordered_map<K, V, Hash> data;
+  Hash hasher;
+
+public:
+  class iterator {
+  private:
+    typename std::unordered_map<K, V, Hash>::const_iterator it;
+    typename std::unordered_map<K, V, Hash>::const_iterator end_it;
+
+  public:
+    iterator(typename std::unordered_map<K, V, Hash>::const_iterator it,
+             typename std::unordered_map<K, V, Hash>::const_iterator end)
+        : it(it), end_it(end) {}
+
+    std::pair<const K&, V&> operator*() const {
+      return {it->first, const_cast<V&>(it->second)};
+    }
+
+    std::pair<const K, V>* operator->() const { return &(*it); }
+
+    iterator& operator++() {
+      ++it;
+      return *this;
+    }
+
+    iterator operator++(int) {
+      iterator tmp = *this;
+      ++it;
+      return tmp;
+    }
+
+    bool operator==(const iterator& other) const { return it == other.it; }
+
+    bool operator!=(const iterator& other) const { return !(*this == other); }
+  };
+
+  iterator begin() const { return iterator(data.cbegin(), data.cend()); }
+
+  iterator end() const { return iterator(data.cend(), data.cend()); }
+
+  StandardUnorderedMap(size_t initial_capacity = 16) : hasher(Hash()) {
+    data.reserve(initial_capacity);
+  }
+
+  ~StandardUnorderedMap() = default;
+
+  bool contains(const K& key) const { return data.find(key) != data.end(); }
+
+  bool insert(const K& key, const V& value) {
+    auto [it, inserted] = data.insert_or_assign(key, value);
+    return inserted;
+  }
+
+  V& at(const K& key) {
+    auto it = data.find(key);
+    if (it == data.end()) {
+      throw HashMapError("No key in map");
+    }
+    return it->second;
+  }
+
+  const V& at(const K& key) const {
+    auto it = data.find(key);
+    if (it == data.end()) {
+      throw HashMapError("No key in map");
+    }
+    return it->second;
+  }
+
+  bool get(const K& key, V& value) const {
+    auto it = data.find(key);
+    if (it != data.end()) {
+      value = it->second;
+      return true;
+    }
+    return false;
+  }
+
+  bool remove(const K& key) { return data.erase(key) > 0; }
+
+  size_t size() const { return data.size(); }
 };
